@@ -1,34 +1,27 @@
 import { Hono } from "npm:hono@4";
 import { cors } from "npm:hono/cors";
-import { sqlite } from "https://esm.town/v/std/sqlite/main.ts";
 
 // ============================================================================
-// 1. EMPIRICAL TELEMETRY & MODEL DISCOVERY SCHEMA (SQLITE)
+// 1. EMPIRICAL TELEMETRY & MODEL DISCOVERY SCHEMA (DENO KV)
 // ============================================================================
 
-await sqlite.execute(`
-  CREATE TABLE IF NOT EXISTS mesh_models_v4 (
-    tuple_id TEXT PRIMARY KEY,
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    iq_prior REAL NOT NULL,
-    iq_verified REAL DEFAULT 1.0,
-    ewma_ttft_ms REAL DEFAULT 900.0,
-    ewma_tps REAL DEFAULT 35.0,
-    success_count INTEGER DEFAULT 0,
-    failure_streak INTEGER DEFAULT 0,
-    cooldown_until INTEGER DEFAULT 0,
-    last_probed INTEGER DEFAULT 0,
-    last_error TEXT
-  );
-`);
+// Deno.openKv() natively persists across edge isolates on Deno Deploy
+const kv = await Deno.openKv();
 
-await sqlite.execute(`
-  CREATE TABLE IF NOT EXISTS mesh_discovery_meta (
-    provider_id TEXT PRIMARY KEY,
-    last_synced INTEGER DEFAULT 0
-  );
-`);
+interface MeshModelRecord {
+  tuple_id: string;
+  provider_id: string;
+  model_id: string;
+  iq_prior: number;
+  iq_verified: number;
+  ewma_ttft_ms: number;
+  ewma_tps: number;
+  success_count: number;
+  failure_streak: number;
+  cooldown_until: number;
+  last_probed: number;
+  last_error: string | null;
+}
 
 // ============================================================================
 // 2. INTRINSIC CAPABILITY PARSER (IQ PRIOR HEURISTIC + BENCHMARK WEIGHTS)
@@ -150,7 +143,10 @@ const PROVIDERS: ProviderSpec[] = [
       if (!res.ok) throw new Error("Failed LLM7 model discovery");
       const json = await res.json();
       const list = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
-      return list.map((m: any) => ({ id: String(m.id), context: Number(m.context_window || 65536) }));
+      return list.map((m: Record<string, unknown>) => ({
+        id: String(m.id),
+        context: Number(m.context_window || 65536),
+      }));
     },
     executeCompletion: (modelId, messages, signal) =>
       timedOpenAIFetch(
@@ -168,9 +164,14 @@ const PROVIDERS: ProviderSpec[] = [
         const res = await fetch("https://ai-gateway.kilo.ai/api/v1/models", { signal });
         if (res.ok) {
           const json = await res.json();
-          const freeOnes = (json.data || []).filter((m: any) => String(m.id).includes("free") || String(m.id).includes("kilo-auto"));
+          const freeOnes = (json.data || []).filter((m: Record<string, unknown>) =>
+            String(m.id).includes("free") || String(m.id).includes("kilo-auto")
+          );
           if (freeOnes.length > 0) {
-            return freeOnes.map((m: any) => ({ id: String(m.id), context: Number(m.context_length || 256000) }));
+            return freeOnes.map((m: Record<string, unknown>) => ({
+              id: String(m.id),
+              context: Number(m.context_length || 256000),
+            }));
           }
         }
       } catch {
@@ -197,7 +198,7 @@ const PROVIDERS: ProviderSpec[] = [
       const res = await fetch("https://text.pollinations.ai/models", { signal });
       if (!res.ok) throw new Error("Failed Pollinations discovery");
       const list = await res.json();
-      return (Array.isArray(list) ? list : []).map((m: any) => ({
+      return (Array.isArray(list) ? list : []).map((m: Record<string, unknown>) => ({
         id: String(m.name || m.id),
         context: 65536,
       }));
@@ -238,9 +239,13 @@ const PROVIDERS: ProviderSpec[] = [
 
 async function ensureCatalogSynced(force: boolean = false): Promise<void> {
   const now = Date.now();
-  const metaRes = await sqlite.execute("SELECT provider_id, last_synced FROM mesh_discovery_meta");
   const syncMap = new Map<string, number>();
-  for (const r of metaRes.rows) syncMap.set(String(r.provider_id), Number(r.last_synced));
+
+  const metaIter = kv.list<number>({ prefix: ["mesh_discovery_meta"] });
+  for await (const entry of metaIter) {
+    const providerId = String(entry.key[1]);
+    syncMap.set(providerId, Number(entry.value));
+  }
 
   const syncTasks = PROVIDERS.map(async (p) => {
     const last = syncMap.get(p.id) || 0;
@@ -256,20 +261,35 @@ async function ensureCatalogSynced(force: boolean = false): Promise<void> {
         if (iqPrior <= 0.0) continue; // Skip non-chat models
 
         const tupleId = `${p.id}::${item.id}`;
-        await sqlite.execute({
-          sql: `INSERT INTO mesh_models_v4 (tuple_id, provider_id, model_id, iq_prior)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(tuple_id) DO UPDATE SET iq_prior = ?`,
-          args: [tupleId, p.id, item.id, iqPrior, iqPrior],
-        });
+        const modelKey = ["mesh_models_v4", tupleId];
+        const existing = await kv.get<MeshModelRecord>(modelKey);
+
+        if (existing.value) {
+          await kv.set(modelKey, {
+            ...existing.value,
+            iq_prior: iqPrior,
+          });
+        } else {
+          const freshRecord: MeshModelRecord = {
+            tuple_id: tupleId,
+            provider_id: p.id,
+            model_id: item.id,
+            iq_prior: iqPrior,
+            iq_verified: 1.0,
+            ewma_ttft_ms: 900.0,
+            ewma_tps: 35.0,
+            success_count: 0,
+            failure_streak: 0,
+            cooldown_until: 0,
+            last_probed: 0,
+            last_error: null,
+          };
+          await kv.set(modelKey, freshRecord);
+        }
       }
-      await sqlite.execute({
-        sql: `INSERT INTO mesh_discovery_meta (provider_id, last_synced) VALUES (?, ?)
-              ON CONFLICT(provider_id) DO UPDATE SET last_synced = ?`,
-        args: [p.id, now, now],
-      });
+      await kv.set(["mesh_discovery_meta", p.id], now);
     } catch {
-      // Retain existing SQLite catalog on discovery timeout
+      // Retain existing Deno KV catalog on discovery timeout
     } finally {
       clearTimeout(timer);
     }
@@ -292,12 +312,16 @@ interface ScoredCandidate {
 async function getRankedCandidates(mode: "fast" | "smart" | "code"): Promise<ScoredCandidate[]> {
   await ensureCatalogSynced(false);
   const now = Date.now();
-  const res = await sqlite.execute({
-    sql: "SELECT * FROM mesh_models_v4 WHERE cooldown_until <= ?",
-    args: [now],
-  });
 
-  const candidates: ScoredCandidate[] = res.rows.map((r) => {
+  const rows: MeshModelRecord[] = [];
+  const iter = kv.list<MeshModelRecord>({ prefix: ["mesh_models_v4"] });
+  for await (const entry of iter) {
+    if (entry.value && entry.value.cooldown_until <= now) {
+      rows.push(entry.value);
+    }
+  }
+
+  const candidates: ScoredCandidate[] = rows.map((r) => {
     const iqPrior = Number(r.iq_prior);
     const iqVerified = Number(r.iq_verified);
     const iqEffective = Number((iqPrior * iqVerified).toFixed(3));
@@ -339,33 +363,40 @@ async function getRankedCandidates(mode: "fast" | "smart" | "code"): Promise<Sco
 // 5. CLOSED-LOOP CANARY BENCHMARK & TELEMETRY UPDATERS
 // ============================================================================
 
-async function recordTupleSuccess(tupleId: string, ttftMs: number, totalMs: number, estTokens: number) {
+async function recordTupleSuccess(tupleId: string, ttftMs: number, totalMs: number, estTokens: number): Promise<void> {
   const streamDurationSec = Math.max(0.05, (totalMs - ttftMs) / 1000);
   const observedTps = Math.min(600, Math.max(2, estTokens / streamDurationSec));
 
-  await sqlite.execute({
-    sql: `UPDATE mesh_models_v4
-          SET ewma_ttft_ms = (0.3 * ?) + (0.7 * ewma_ttft_ms),
-              ewma_tps = (0.3 * ?) + (0.7 * ewma_tps),
-              success_count = success_count + 1,
-              failure_streak = 0,
-              cooldown_until = 0
-          WHERE tuple_id = ?`,
-    args: [ttftMs, observedTps, tupleId],
+  const key = ["mesh_models_v4", tupleId];
+  const entry = await kv.get<MeshModelRecord>(key);
+  if (!entry.value) return;
+
+  const r = entry.value;
+  await kv.set(key, {
+    ...r,
+    ewma_ttft_ms: (0.3 * ttftMs) + (0.7 * r.ewma_ttft_ms),
+    ewma_tps: (0.3 * observedTps) + (0.7 * r.ewma_tps),
+    success_count: r.success_count + 1,
+    failure_streak: 0,
+    cooldown_until: 0,
   });
 }
 
-async function recordTupleFailure(tupleId: string, errMsg: string) {
+async function recordTupleFailure(tupleId: string, errMsg: string): Promise<void> {
   const now = Date.now();
   const baseSec = errMsg.includes("429") ? 120 : errMsg.includes("401") || errMsg.includes("403") ? 900 : 60;
-  await sqlite.execute({
-    sql: `UPDATE mesh_models_v4
-          SET failure_streak = failure_streak + 1,
-              cooldown_until = ?,
-              ewma_ttft_ms = MIN(15000, ewma_ttft_ms * 1.4),
-              last_error = ?
-          WHERE tuple_id = ?`,
-    args: [now + baseSec * 1000, errMsg.slice(0, 200), tupleId],
+
+  const key = ["mesh_models_v4", tupleId];
+  const entry = await kv.get<MeshModelRecord>(key);
+  if (!entry.value) return;
+
+  const r = entry.value;
+  await kv.set(key, {
+    ...r,
+    failure_streak: r.failure_streak + 1,
+    cooldown_until: now + baseSec * 1000,
+    ewma_ttft_ms: Math.min(15000, r.ewma_ttft_ms * 1.4),
+    last_error: errMsg.slice(0, 200),
   });
 }
 
@@ -392,13 +423,21 @@ async function runCanaryProbeOnTopCandidates(limit: number = 4) {
         const verifiedMultiplier = passed ? 1.0 : 0.55; // Penalize models that fail basic arithmetic/instruction adherence
 
         await recordTupleSuccess(cand.tupleId, res.ttftMs, res.totalMs, res.estTokens);
-        await sqlite.execute({
-          sql: "UPDATE mesh_models_v4 SET iq_verified = ?, last_probed = ? WHERE tuple_id = ?",
-          args: [verifiedMultiplier, Date.now(), cand.tupleId],
-        });
+
+        const key = ["mesh_models_v4", cand.tupleId];
+        const entry = await kv.get<MeshModelRecord>(key);
+        if (entry.value) {
+          await kv.set(key, {
+            ...entry.value,
+            iq_verified: verifiedMultiplier,
+            last_probed: Date.now(),
+          });
+        }
+
         return { tupleId: cand.tupleId, passed, ttftMs: res.ttftMs, answer: res.content.trim() };
-      } catch (e: any) {
-        await recordTupleFailure(cand.tupleId, String(e?.message || "Probe failed"));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Probe failed";
+        await recordTupleFailure(cand.tupleId, msg);
         throw e;
       } finally {
         clearTimeout(timer);
@@ -410,7 +449,7 @@ async function runCanaryProbeOnTopCandidates(limit: number = 4) {
 }
 
 // ============================================================================
-// 6. HONO HTTP APPLICATION
+// 6. HONO HTTP APPLICATION & DENO DEPLOY RUNTIME
 // ============================================================================
 
 const app = new Hono();
@@ -423,6 +462,7 @@ app.get("/", async (c) => {
 
   return c.json({
     engine: "vajra-empirical-sovereign-v4",
+    runtime: "deno-deploy-kv",
     selection_methodology: {
       free_fast_objective: "Minimizes E[T_total] = EWMA_TTFT_ms + (250 / EWMA_TPS) * 1000 subject to IQ >= 0.45",
       free_smart_objective: "Maximizes (IQ_prior * Canary_Verification_Multiplier) - Latency_Overflow_Penalty",
@@ -493,9 +533,10 @@ app.post("/v1/chat/completions", async (c) => {
         const res = await provider.executeCompletion(cand.modelId, messages, masterAbort.signal);
         await recordTupleSuccess(cand.tupleId, res.ttftMs, res.totalMs, res.estTokens);
         return { ...res, candidate: cand };
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!masterAbort.signal.aborted) {
-          await recordTupleFailure(cand.tupleId, String(err?.message || "Exec error"));
+          const msg = err instanceof Error ? err.message : "Exec error";
+          await recordTupleFailure(cand.tupleId, msg);
         }
         throw err;
       }
@@ -529,10 +570,20 @@ app.post("/v1/chat/completions", async (c) => {
     } finally {
       clearTimeout(globalTimeout);
     }
-  } catch (err: any) {
-    return c.json({ error: { message: err.message || "Empirical mesh dispatch failed" } }, 502);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Empirical mesh dispatch failed";
+    return c.json({ error: { message: msg } }, 502);
   }
 });
 
-export {app};
+// Optional background cron on Deno Deploy to automatically probe top candidates every 30 minutes
+if (typeof Deno.cron === "function") {
+  Deno.cron("canary-probe", "*/30 * * * *", async () => {
+    await runCanaryProbeOnTopCandidates(4);
+  });
+}
+
+Deno.serve(app.fetch);
+
+export { app };
 export default app.fetch;
