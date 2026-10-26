@@ -241,7 +241,7 @@ function classifyPromptIntent(messages: Array<{ role: string; content: string }>
 interface ProviderSpec {
   id: string;
   name: string;
-  discoverModels: (signal: AbortSignal) => Promise<Array<{ context?: id: number string; }>>;
+  discoverModels: (signal: AbortSignal) => Promise<Array<{ id: string, context?: number; }>>;
   executeCompletion: (
     modelId: string,
     messages: Array<{ role: string; content: string }>,
