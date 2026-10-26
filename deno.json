@@ -1,44 +1,21 @@
 {
-  "nodeModulesDir": "auto",
+  "entrypoint": "main.ts",
   "tasks": {
-    "check": "deno fmt --check . && deno lint . && deno check",
-    "dev": "deno run -A --watch=static/,routes/ dev.ts",
-    "build": "deno run -A dev.ts build",
-    "start": "deno serve -A _fresh/server.js",
-    "update": "deno run -A -r jsr:@fresh/update ."
+    "start": "deno serve --unstable-kv --unstable-cron -A main.ts",
+    "dev": "deno run --watch --unstable-kv --unstable-cron -A main.ts",
+    "build": "echo 'Skipping Fresh build - standalone Hono entrypoint'"
   },
-  "lint": {
-    "rules": {
-      "tags": [
-        "fresh",
-        "recommended"
-      ]
-    }
-  },
-  "exclude": [
-    "**/_fresh/*"
+  "unstable": [
+    "kv",
+    "cron"
   ],
   "imports": {
-    "fresh": "jsr:@fresh/core@^2.0.0-alpha.60",
-    "preact": "npm:preact@^10.27.1",
-    "@preact/signals": "npm:@preact/signals@^2.3.1"
+    "hono": "npm:hono@4.6.14",
+    "hono/cors": "npm:hono@4.6.14/cors",
+    "hono/body-limit": "npm:hono@4.6.14/body-limit"
   },
   "compilerOptions": {
-    "lib": [
-      "dom",
-      "dom.asynciterable",
-      "dom.iterable",
-      "deno.ns"
-    ],
-    "jsx": "precompile",
-    "jsxImportSource": "preact",
-    "jsxPrecompileSkipElements": [
-      "a",
-      "img",
-      "source",
-      "body",
-      "html",
-      "head"
-    ]
+    "strict": true,
+    "lib": ["deno.window", "deno.unstable"]
   }
 }
