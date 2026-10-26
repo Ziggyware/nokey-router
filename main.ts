@@ -534,4 +534,5 @@ app.post("/v1/chat/completions", async (c) => {
   }
 });
 
+export app;
 export default app.fetch;
