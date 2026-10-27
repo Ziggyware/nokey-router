@@ -541,7 +541,7 @@ const PROVIDERS: ProviderSpec[] = [
     discoverModels: async (signal) => {
       try {
         // OpenRouter's /api/v1/models endpoint is public and returns live pricing & :free slugs
-        const res = await fetch("[https://openrouter.ai/api/v1/models](https://openrouter.ai/api/v1/models)", { signal });
+        const res = await fetch("https://openrouter.ai/api/v1/models", { signal });
         if (res.ok) {
           const json = await res.json();
           const data: Array<Record<string, unknown>> = Array.isArray(json.data) ? json.data : [];
@@ -575,10 +575,10 @@ const PROVIDERS: ProviderSpec[] = [
         throw new Error("HTTP_401: OPENROUTER_API_KEY not configured for openrouter provider");
       }
       return timedOpenAIFetch(
-        "[https://openrouter.ai/api/v1/chat/completions](https://openrouter.ai/api/v1/chat/completions)",
+        "https://openrouter.ai/api/v1/chat/completions",
         {
           "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "[https://vajra-mesh.deno.dev](https://vajra-mesh.deno.dev)",
+          "HTTP-Referer": "https://vajra-mesh.deno.dev",
           "X-Title": "Vajra Empirical Sovereign Router",
         },
         { model: modelId, messages, stream: false, ...buildOptionalParams(options) },
@@ -591,7 +591,7 @@ const PROVIDERS: ProviderSpec[] = [
     name: "LLM7 Anonymous Mesh",
     isConfigured: () => true,
     discoverModels: async (signal) => {
-      const res = await fetch("[https://api.llm7.io/v1/models](https://api.llm7.io/v1/models)", { signal });
+      const res = await fetch("https://api.llm7.io/v1/models", { signal });
       if (!res.ok) throw new Error("Failed LLM7 model discovery");
       const json = await res.json();
       const list = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
@@ -602,7 +602,7 @@ const PROVIDERS: ProviderSpec[] = [
     },
     executeCompletion: (modelId, messages, signal, options) =>
       timedOpenAIFetch(
-        "[https://api.llm7.io/v1/chat/completions](https://api.llm7.io/v1/chat/completions)",
+        "https://api.llm7.io/v1/chat/completions",
         { "Authorization": "Bearer unused" },
         { model: modelId, messages, stream: false, ...buildOptionalParams(options) },
         signal,
@@ -614,7 +614,7 @@ const PROVIDERS: ProviderSpec[] = [
     isConfigured: () => true,
     discoverModels: async (signal) => {
       try {
-        const res = await fetch("[https://ai-gateway.kilo.ai/api/v1/models](https://ai-gateway.kilo.ai/api/v1/models)", { signal });
+        const res = await fetch("https://ai-gateway.kilo.ai/api/v1/models", { signal });
         if (res.ok) {
           const json = await res.json();
           const freeOnes = (json.data || []).filter((m: Record<string, unknown>) =>
@@ -644,7 +644,7 @@ const PROVIDERS: ProviderSpec[] = [
     },
     executeCompletion: (modelId, messages, signal, options) =>
       timedOpenAIFetch(
-        "[https://ai-gateway.kilo.ai/api/v1/chat/completions](https://ai-gateway.kilo.ai/api/v1/chat/completions)",
+        "https://ai-gateway.kilo.ai/api/v1/chat/completions",
         { "x-kilocode-mode": "code", "User-Agent": "Kilo-Code/3.4.0" },
         { model: modelId, messages, stream: false, ...buildOptionalParams(options) },
         signal,
@@ -655,7 +655,7 @@ const PROVIDERS: ProviderSpec[] = [
     name: "Pollinations Keyless Core",
     isConfigured: () => true,
     discoverModels: async (signal) => {
-      const res = await fetch("[https://text.pollinations.ai/models](https://text.pollinations.ai/models)", { signal });
+      const res = await fetch("https://text.pollinations.ai/models", { signal });
       if (!res.ok) throw new Error("Failed Pollinations discovery");
       const list = await res.json();
       return (Array.isArray(list) ? list : []).map((m: Record<string, unknown>) => ({
@@ -665,7 +665,7 @@ const PROVIDERS: ProviderSpec[] = [
     },
     executeCompletion: (modelId, messages, signal, options) =>
       timedOpenAIFetch(
-        "[https://text.pollinations.ai/openai](https://text.pollinations.ai/openai)",
+        "https://text.pollinations.ai/openai",
         {},
         { model: modelId, messages, stream: false, ...buildOptionalParams(options) },
         signal,
@@ -684,7 +684,7 @@ const PROVIDERS: ProviderSpec[] = [
     ],
     executeCompletion: (modelId, messages, signal, options) =>
       timedOpenAIFetch(
-        "[https://opencode.ai/inference/openai/v1/chat/completions](https://opencode.ai/inference/openai/v1/chat/completions)",
+        "https://opencode.ai/inference/openai/v1/chat/completions",
         {
           "x-opencode-client": "cli",
           "x-opencode-project": "opencode-cli",
