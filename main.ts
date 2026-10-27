@@ -410,7 +410,7 @@ interface ProviderSpec {
   id: string;
   name: string;
   isConfigured: () => boolean;
-  discoverModels: (signal: AbortSignal) => Promise<Array<{ context?: id: number string; }>>;
+  discoverModels: (signal: AbortSignal) => Promise<Array<{ context?: number, id: string; }>>;
   executeCompletion: (
     modelId: string,
     messages: Array<{ role: string; content: unknown }>,
