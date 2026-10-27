@@ -589,7 +589,10 @@ const PROVIDERS: ProviderSpec[] = [
   {
     id: "llm7",
     name: "LLM7 Anonymous Mesh",
-    isConfigured: () => true,
+    // Disabled 2026-10-27: llm7.io revoked anonymous access (401 on the hardcoded
+    // "Bearer unused" token) and its 47 catalog tuples clogged the smart/code
+    // dispatch waves. Re-enable only after wiring a real LLM7_API_KEY here.
+    isConfigured: () => false,
     discoverModels: async (signal) => {
       const res = await fetch("https://api.llm7.io/v1/models", { signal });
       if (!res.ok) throw new Error("Failed LLM7 model discovery");
