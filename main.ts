@@ -933,7 +933,7 @@ async function runCanaryProbeOnTopCandidates(limit: number = 4) {
       if (!provider || !provider.isConfigured()) return null;
 
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 11000);
+      const timer = setTimeout(() => ctrl.abort(), 110000);
       try {
         const res = await provider.executeCompletion(cand.modelId, probePrompt, ctrl.signal);
         const passed = /\b451\b/.test(res.content.trim());
@@ -1127,7 +1127,7 @@ honoApp.post("/v1/chat/completions", async (c) => {
     // model shows ~17.6 s TTFT alone), so the budget is sized for complete
     // generations, and a failed wave falls through to the next three
     // candidates instead of failing the whole request.
-    const timeoutMs = mode === "reasoning" ? 180000 : mode === "fast" ? 45000 : 120000;
+    const timeoutMs = mode === "reasoning" ? 1800000 : mode === "fast" ? 450000 : 1200000;
     const masterAbort = new AbortController();
     const globalTimeout = setTimeout(() => masterAbort.abort(), timeoutMs);
 
