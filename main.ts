@@ -1123,13 +1123,16 @@ honoApp.post("/v1/chat/completions", async (c) => {
       }
     }
 
-    const timeoutMs = mode === "reasoning" ? 28000 : 18000;
+    // Real synthesis generations run far past the old 18 s cap (a 550B free
+    // model shows ~17.6 s TTFT alone), so the budget is sized for complete
+    // generations, and a failed wave falls through to the next three
+    // candidates instead of failing the whole request.
+    const timeoutMs = mode === "reasoning" ? 180000 : mode === "fast" ? 45000 : 120000;
     const masterAbort = new AbortController();
     const globalTimeout = setTimeout(() => masterAbort.abort(), timeoutMs);
 
-    const wave = ranked.slice(0, 3);
-
-    const attempts = wave.map(async (cand, idx) => {
+    const raceWave = (wave: ScoredCandidate[]) =>
+      Promise.any(wave.map(async (cand, idx) => {
       const staggerMs = idx === 0
         ? 0
         : idx === 1
@@ -1172,10 +1175,24 @@ honoApp.post("/v1/chat/completions", async (c) => {
         }
         throw err;
       }
-    });
+      }));
 
     try {
-      const winner = await Promise.any(attempts);
+      let winner: Awaited<ReturnType<typeof raceWave>> | null = null;
+      let lastWaveError: unknown = null;
+      for (
+        let waveStart = 0;
+        waveStart < Math.min(ranked.length, 9) && !winner;
+        waveStart += 3
+      ) {
+        if (masterAbort.signal.aborted) break;
+        try {
+          winner = await raceWave(ranked.slice(waveStart, waveStart + 3));
+        } catch (waveErr) {
+          lastWaveError = waveErr;
+        }
+      }
+      if (!winner) throw lastWaveError ?? new Error("All promises were rejected");
       masterAbort.abort();
 
       const completionId = `chatcmpl-${crypto.randomUUID()}`;
