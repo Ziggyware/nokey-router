@@ -970,27 +970,6 @@ const PROVIDERS: ProviderSpec[] = [
       ),
   },
   {
-    id: "pollinations",
-    name: "Pollinations Keyless Core",
-    isConfigured: () => true,
-    discoverModels: async (signal) => {
-      const res = await fetch("https://text.pollinations.ai/models", { signal });
-      if (!res.ok) throw new Error("Failed Pollinations discovery");
-      const list = await res.json();
-      return (Array.isArray(list) ? list : []).map((m: Record<string, unknown>) => ({
-        id: String(m.name || m.id),
-        context: Number(m.context_length || m.maxInputChars || 128000),
-      }));
-    },
-    executeCompletion: (modelId, messages, signal, options) =>
-      timedOpenAIFetch(
-        "https://text.pollinations.ai/openai",
-        {},
-        { model: modelId, messages, stream: false, ...buildOptionalParams(options) },
-        signal,
-      ),
-  },
-  {
     id: "opencode",
     name: "OpenCode V2 Zen",
     isConfigured: () => true,
