@@ -387,6 +387,49 @@ function classifyPromptIntent(
 // 5. LIVE UPSTREAM MODEL CATALOG DISCOVERY ADAPTERS (INCL. OPENROUTER :free)
 // ============================================================================
 
+// Provider-lookup helpers keyed by the services.json registry name.
+
+function providerList(): ProviderSpec[] {
+  // These built-in providers are kept explicit because their dispatch shape,
+  // auth, discovery quirks, and capability tiers are maintained by hand.
+  return PROVIDERS;
+}
+
+async function serviceJsonProviderList(): Promise<ProviderSpec[]> {
+  try {
+    return await getServiceJsonBaselineProviders();
+  } catch (err) {
+    console.error("service-json provider load promise rejected:", err);
+    return [];
+  }
+}
+
+async function resolveProviderByName(name: string): Promise<ProviderSpec | undefined> {
+  const normalized = name.trim();
+  if (!normalized) return undefined;
+
+  for (const p of providerList()) {
+    if (p && p.name.trim().toLowerCase() === normalized.toLowerCase()) return p;
+  }
+
+  for (const p of await serviceJsonProviderList()) {
+    if (p && p.name.trim().toLowerCase() === normalized.toLowerCase()) return p;
+  }
+  return undefined;
+}
+
+async function resolveProviderByNameWithDomain(name: string, remoteAddr: string): Promise<ProviderSpec | undefined> {
+  const byName = await resolveProviderByName(name);
+  if (byName) return byName;
+  return undefined;
+}
+
+async function resolveProviderByNameWithEndpointResolver(name: string, remoteAddr: string): Promise<ProviderSpec | undefined> {
+  return resolveProviderByNameWithDomain(name, remoteAddr);
+}
+
+export const resolveProviderByNameAsync = resolveProviderByName;
+
 interface CompletionResult {
   content: string;
   reasoningContent: string | null;
@@ -532,6 +575,279 @@ const OPENROUTER_OCT2026_FREE_FALLBACK: Array<{ id: string; context: number }> =
   { id: "inclusionai/ling-3.0-flash-sante:free", context: 262144 },
   { id: "liquid/lfm-2.5-2.6b:free", context: 65536 },
 ];
+
+// ============================================================================
+// 5b. SERVICES.JSON REGISTRY DRIVEN PROVIDERS
+// ============================================================================
+
+interface ServiceJsonEndpoint {
+  id: number;
+  name: string;
+  category: string;
+  baseUrl: string;
+  url: string;
+  modelsUrl: string | null;
+  defaultModel: string;
+  authRequired: boolean;
+  authMode: string | null;
+  authHeader: string | null;
+  notes: string | null;
+  telemetry: unknown;
+}
+
+interface ServiceJsonRegistry {
+  registryName: string;
+  asOfDate: string;
+  totalEndpoints: number;
+  endpoints: ServiceJsonEndpoint[];
+}
+
+// Schema-guarded registry parser. Only accepts {"endpoints": [...]} payloads
+// where every endpoint tuple carries the fields required to build a ProviderSpec.
+function parseServiceJsonRegistry(raw: string): ServiceJsonRegistry | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const root = parsed as Record<string, unknown>;
+
+  if (typeof root.totalEndpoints !== "number" || !Array.isArray(root.endpoints)) {
+    return null;
+  }
+  if (root.endpoints.length === 0) {
+    return null;
+  }
+
+  const endpoints: ServiceJsonEndpoint[] = [];
+  for (const item of root.endpoints) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    if (typeof obj.name !== "string" || typeof obj.url !== "string") continue;
+    if (obj.baseUrl !== undefined && typeof obj.baseUrl !== "string") continue;
+    if (obj.modelsUrl !== undefined && typeof obj.modelsUrl !== "string") continue;
+    if (obj.authHeader !== undefined && typeof obj.authHeader !== "string") continue;
+    if (obj.defaultModel !== undefined && typeof obj.defaultModel !== "string") continue;
+    if (obj.authMode !== undefined && typeof obj.authMode !== "string") continue;
+    if (obj.category !== undefined && typeof obj.category !== "string") continue;
+    if (obj.notes !== undefined && typeof obj.notes !== "string") continue;
+    if (obj.id !== undefined && typeof obj.id !== "number") continue;
+    endpoints.push({
+      id: typeof obj.id === "number" ? obj.id : 0,
+      name: obj.name,
+      category: typeof obj.category === "string" ? obj.category : "",
+      baseUrl: typeof obj.baseUrl === "string" ? obj.baseUrl : "",
+      url: obj.url,
+      modelsUrl: typeof obj.modelsUrl === "string" ? obj.modelsUrl : null,
+      defaultModel: typeof obj.defaultModel === "string" ? obj.defaultModel : "",
+      authRequired: Boolean(obj.authRequired),
+      authMode: typeof obj.authMode === "string" ? obj.authMode : null,
+      authHeader: typeof obj.authHeader === "string" ? obj.authHeader : null,
+      notes: typeof obj.notes === "string" ? obj.notes : null,
+      telemetry: obj.telemetry ?? null,
+    });
+  }
+
+  if (endpoints.length === 0) return null;
+
+  return {
+    registryName: typeof root.registryName === "string" ? root.registryName : "",
+    asOfDate: typeof root.asOfDate === "string" ? root.asOfDate : "",
+    totalEndpoints: root.totalEndpoints,
+    endpoints,
+  };
+}
+
+let SERVICE_JSON_REGISTRY: ServiceJsonRegistry | null = null;
+let serviceJsonLoadError: string | null = null;
+
+const SERVICE_JSON_FILE = "services.json";
+
+function isFileReadable(path: string): boolean {
+  try {
+    const stat = Deno.statSync(path);
+    return stat.isFile;
+  } catch {
+    return false;
+  }
+}
+
+function loadServiceJsonBody(path: string): string | null {
+  if (!isFileReadable(path)) return null;
+  try {
+    return Deno.readTextFileSync(path);
+  } catch {
+    return null;
+  }
+}
+
+function isServiceJsonFile(path: string): boolean {
+  const base = path.split("/").pop()?.split("\\").pop();
+  if (!base) return false;
+  return base === SERVICE_JSON_FILE;
+}
+
+async function discoverServiceJsonPath(): Promise<string | null> {
+  try {
+    for await (const item of Deno.readDir(".")) {
+      if (item.name !== SERVICE_JSON_FILE) continue;
+      const full = await Deno.realPath(item.name);
+      if (loadServiceJsonBody(full)) return full;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadServiceJsonRegistry(): Promise<ServiceJsonRegistry | null> {
+  if (SERVICE_JSON_REGISTRY) return SERVICE_JSON_REGISTRY;
+
+  const body = await loadServiceJsonBody(SERVICE_JSON_FILE);
+  if (!body) {
+    const discovered = await discoverServiceJsonPath();
+    if (!discovered) {
+      serviceJsonLoadError = "services.json-not-found";
+      return null;
+    }
+    const raw = loadServiceJsonBody(discovered);
+    if (!raw) {
+      serviceJsonLoadError = "services.json-not-readable";
+      return null;
+    }
+    const parsed = parseServiceJsonRegistry(raw);
+    if (!parsed) {
+      serviceJsonLoadError = "services.json-schema-invalid";
+      return null;
+    }
+    SERVICE_JSON_REGISTRY = parsed;
+    return SERVICE_JSON_REGISTRY;
+  }
+
+  if (!isServiceJsonFile(SERVICE_JSON_FILE)) {
+    serviceJsonLoadError = "services.json-path-not-allowed";
+    return null;
+  }
+
+  const parsed = parseServiceJsonRegistry(body);
+  if (!parsed) {
+    serviceJsonLoadError = "services.json-schema-invalid";
+    return null;
+  }
+  SERVICE_JSON_REGISTRY = parsed;
+  return SERVICE_JSON_REGISTRY;
+}
+
+function buildProviderIdFromEndpointName(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 64);
+  if (!normalized) return "services_json_endpoint";
+  return "services_json_" + normalized;
+}
+
+function authHeadersForEndpoint(endpoint: ServiceJsonEndpoint): Record<string, string> {
+  const headerValue = endpoint.authHeader?.trim();
+  if (!headerValue) return {};
+  const lower = headerValue.toLowerCase();
+  if (lower.startsWith("bearer ")) {
+    const token = headerValue.slice("bearer ".length).trim();
+    return { "Authorization": `Bearer ${token}` };
+  }
+  if (lower.startsWith("x-")) {
+    return { [endpoint.authHeader!]: headerValue };
+  }
+  return { "Authorization": headerValue };
+}
+
+function isEndpointConfigured(endpoint: ServiceJsonEndpoint): boolean {
+  const url = endpoint.url.trim();
+  if (!url) return false;
+  if (!endpoint.baseUrl.trim() && !endpoint.modelsUrl) return false;
+  if (!/^https?:\/\//i.test(url)) return false;
+  if (/\{\{|\{\s*\w|\}\s*\}|%[0-9a-z]{2}/i.test(url)) return false;
+  if (url.length > 4096) return false;
+  return true;
+}
+
+function validateServiceJsonProvider(endpoint: ServiceJsonEndpoint): string | null {
+  if (!isEndpointConfigured(endpoint)) return "endpoint-not-configured";
+  if (!endpoint.name.trim()) return "endpoint-name-empty";
+  if (!endpoint.url.trim()) return "endpoint-url-empty";
+  if (endpoint.url.trim().length > 4096) return "endpoint-url-too-long";
+  if (endpoint.baseUrl && !/^https?:\/\//i.test(endpoint.baseUrl)) return "endpoint-baseurl-malformed";
+  if (endpoint.modelsUrl && !/^https?:\/\//i.test(endpoint.modelsUrl)) return "endpoint-modelsurl-malformed";
+  if (endpoint.authHeader && endpoint.authHeader.trim().length > 2048) return "endpoint-auth-header-too-long";
+  return null;
+}
+
+function makeServiceJsonProvider(endpoint: ServiceJsonEndpoint, validationError?: string | null): ProviderSpec {
+  const id = buildProviderIdFromEndpointName(endpoint.name);
+  const headers = authHeadersForEndpoint(endpoint);
+  const baseUrl = endpoint.baseUrl.trim();
+  const modelsUrl = endpoint.modelsUrl?.trim() || null;
+  const chatUrl = endpoint.url.trim();
+  const defaultModel = endpoint.defaultModel.trim() || "unknown";
+  const _validationTag = validationError ?? "ok";
+
+  return {
+    id,
+    name: endpoint.name,
+    isConfigured: () => isEndpointConfigured(endpoint),
+    discoverModels: async (signal) => {
+      const targetUrl = modelsUrl ?? (baseUrl ? `${baseUrl}/models` : null);
+      if (!targetUrl) {
+        return [{ id: defaultModel, context: 128000 }];
+      }
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      try {
+        const res = await fetch(targetUrl, {
+          method: "GET",
+          headers: buildRotatedHeaders({}),
+          signal: ctrl.signal,
+        });
+
+        if (!res.ok) {
+          return [{ id: defaultModel, context: 128000 }];
+        }
+
+        const body = await res.json().catch(() => ({} as unknown));
+        const dataArray = Array.isArray(body.data) ? body.data : Array.isArray(body) ? body : [];
+
+        const models: Array<{ id: string; context?: number }> = [];
+        for (const item of dataArray) {
+          const obj = item as Record<string, unknown>;
+          const idField = String(obj.id || obj.name || obj.model || "").trim();
+          if (!idField) continue;
+          const ctx = Number(obj.context_length ?? obj.context ?? obj.maxInputChars ?? obj.max_tokens ?? 0);
+          models.push({ id: idField, context: ctx || undefined });
+        }
+
+        if (models.length === 0) {
+          return [{ id: defaultModel, context: 128000 }];
+        }
+
+        return models;
+      } catch {
+        return [{ id: defaultModel, context: 128000 }];
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    executeCompletion: (modelId, messages, signal, options) =>
+      timedOpenAIFetch(
+        chatUrl,
+        headers,
+        { model: modelId, messages, stream: false, ...buildOptionalParams(options) },
+        signal,
+      ),
+  };
+}
 
 const PROVIDERS: ProviderSpec[] = [
   {
@@ -700,10 +1016,170 @@ const PROVIDERS: ProviderSpec[] = [
 ];
 
 // ============================================================================
+// 5c. MERGE SERVICES.JSON BACKED PROVIDERS INTO THE ACTIVE PROVIDER LIST
+// ============================================================================
+
+const MERGED_ACTIVE_PROVIDERS: ProviderSpec[] = PROVIDERS;
+
+function getServiceJsonBaselineProviders(): Promise<ProviderSpec[]> {
+  return getServiceJsonBaselineProvidersInternal();
+}
+
+let getServiceJsonBaselineProvidersInternalPromise: Promise<ProviderSpec[]> | null = null;
+
+function getServiceJsonBaselineProvidersInternal(): Promise<ProviderSpec[]> {
+  if (!getServiceJsonBaselineProvidersInternalPromise) {
+    getServiceJsonBaselineProvidersInternalPromise = (async () => {
+      const registry = await loadServiceJsonRegistry();
+      if (!registry) return [];
+      const specs: ProviderSpec[] = [];
+      for (const endpoint of registry.endpoints) {
+        if (!isEndpointConfigured(endpoint)) continue;
+        const validationError = validateServiceJsonProvider(endpoint);
+        if (validationError) {
+          console.warn(`service-json endpoint skipped (${endpoint.name}): ${validationError}`);
+          continue;
+        }
+        specs.push(makeServiceJsonProvider(endpoint, validationError));
+      }
+      return specs;
+    })();
+  }
+  return getServiceJsonBaselineProvidersInternalPromise;
+}
+
+async function activeProviderList(): Promise<ProviderSpec[]> {
+  try {
+    const native = MERGED_ACTIVE_PROVIDERS.filter((p) => p.isConfigured());
+    const serviceJsonParts = await serviceJsonProviderList();
+    const serviceJson = serviceJsonParts.filter((p) => p.isConfigured());
+    return [...native, ...serviceJson];
+  } catch (err) {
+    console.error("active-provider-list rejected:", err);
+    return MERGED_ACTIVE_PROVIDERS.filter((p) => p.isConfigured());
+  }
+}
+
+function isActiveProviderId(id: string): boolean {
+  for (const p of MERGED_ACTIVE_PROVIDERS) {
+    if (p.id === id) return p.isConfigured();
+  }
+  return false;
+}
+
+async function isActiveProviderIdAsync(id: string): Promise<boolean> {
+  for (const p of MERGED_ACTIVE_PROVIDERS) {
+    if (p.id === id) return p.isConfigured();
+  }
+  const p = await resolveProviderByName(id);
+  return Boolean(p && p.isConfigured());
+}
+
+// Prefer the registry-backed resolve path when callers dispatch by router name.
+export async function findProviderByName(name: string): Promise<ProviderSpec | undefined> {
+  return resolveProviderByName(name);
+}
+
+// Admissibility consolidation. A provider is admissible if it is configured and
+// resolvable through the active provider universe (native + services.json).
+async function isProviderAdmissible(provider: ProviderSpec): Promise<boolean> {
+  if (!provider.isConfigured()) return false;
+  const found = await resolveProviderByName(provider.name);
+  return Boolean(found);
+}
+
+function mergeAdmissibleProviderList(native: ProviderSpec[], serviceJson: ProviderSpec[]): ProviderSpec[] {
+  const kept: ProviderSpec[] = [];
+  for (const p of native) {
+    if (p.isConfigured()) kept.push(p);
+  }
+  for (const p of serviceJson) {
+    if (p.isConfigured()) kept.push(p);
+  }
+  return kept;
+}
+
+
+// ============================================================================
 // 6. AUTO-DISCOVERY SYNC & PARETO + THOMPSON OBJECTIVE SCORER
 // ============================================================================
 
-let lastSyncCheckMemory = 0;
+let lastSyncCheckMemory = 0;interface SyncProviderTask {
+  provider: ProviderSpec;
+  last: number;
+  force: boolean;
+}
+
+let perEndpointSyncGate = new Map<string, Promise<void>>();
+
+async function runSyncProviderTask(task: SyncProviderTask): Promise<void> {
+  const { provider, last, force } = task;
+  if (!provider.isConfigured()) return;
+  if (!force && last > 0 && Date.now() - last < 6 * 3600 * 1000) return;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5500);
+  try {
+    const discovered = await provider.discoverModels(ctrl.signal).catch((err) => {
+      console.error(`sync discovery failed for ${provider.id}:`, err);
+      return [] as Array<{ id: string; context?: number }>;
+    });
+    if (!discovered || discovered.length === 0) return;
+
+    const modelTasks = discovered.map(async (item) => {
+      const ctxWindow = item.context || 128000;
+      const profile = analyzeModelCapabilities(item.id, ctxWindow);
+      if (profile.iqPrior <= 0.0) return;
+
+      const tupleId = `${provider.id}::${item.id}`;
+      const modelKey = [KV_PREFIX, tupleId];
+      const existing = await kv.get<MeshModelRecord>(modelKey);
+
+      if (existing.value) {
+        const updated: MeshModelRecord = {
+          ...existing.value,
+          iq_prior: profile.iqPrior,
+          supports_reasoning: profile.supportsReasoning,
+          supports_vision: profile.supportsVision,
+          is_coding_specialist: profile.isCodingSpecialist,
+          context_window: ctxWindow,
+        };
+        await kv.set(modelKey, updated);
+        L1_CACHE.set(tupleId, updated);
+      } else {
+        const freshRecord: MeshModelRecord = {
+          tuple_id: tupleId,
+          provider_id: provider.id,
+          model_id: item.id,
+          iq_prior: profile.iqPrior,
+          iq_verified: 1.0,
+          supports_reasoning: profile.supportsReasoning,
+          supports_vision: profile.supportsVision,
+          is_coding_specialist: profile.isCodingSpecialist,
+          context_window: ctxWindow,
+          ewma_ttft_ms: 900.0,
+          ewma_tps: 42.0,
+          alpha_success: 2.0,
+          beta_failure: 1.0,
+          success_count: 0,
+          failure_streak: 0,
+          cooldown_until: 0,
+          last_probed: 0,
+          last_error: null,
+        };
+        await kv.set(modelKey, freshRecord);
+        L1_CACHE.set(tupleId, freshRecord);
+      }
+    });
+
+    await Promise.allSettled(modelTasks);
+    await kv.set(["mesh_discovery_meta_v5_2", provider.id], Date.now());
+  } catch (err) {
+    console.error(`sync task failed for ${provider.id}:`, err);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function ensureCatalogSynced(force: boolean = false): Promise<void> {
   const now = Date.now();
@@ -712,76 +1188,48 @@ async function ensureCatalogSynced(force: boolean = false): Promise<void> {
   }
   lastSyncCheckMemory = now;
 
+  const serviceJsonProviderList = (await getServiceJsonBaselineProvidersInternal().catch((err) => {
+    console.error("service-json provider load promise rejected:", err);
+    return [];
+  })) as ProviderSpec[];
+  const mergedProviders = [...MERGED_ACTIVE_PROVIDERS, ...serviceJsonProviderList];
+
   const syncMap = new Map<string, number>();
   const metaIter = kv.list<number>({ prefix: ["mesh_discovery_meta_v5_2"] });
   for await (const entry of metaIter) {
     syncMap.set(String(entry.key[1]), Number(entry.value));
   }
 
-  const syncTasks = PROVIDERS.map(async (p) => {
-    if (!p.isConfigured()) return;
-    const last = syncMap.get(p.id) || 0;
-    if (!force && now - last < 6 * 3600 * 1000) return;
+  const syncTasks = mergedProviders.map((p) => ({
+    provider: p,
+    last: syncMap.get(p.id) ?? 0,
+    force,
+  }));
 
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5500);
-    try {
-      const discovered = await p.discoverModels(ctrl.signal);
-      for (const item of discovered) {
-        const ctxWindow = item.context || 128000;
-        const profile = analyzeModelCapabilities(item.id, ctxWindow);
-        if (profile.iqPrior <= 0.0) continue;
-
-        const tupleId = `${p.id}::${item.id}`;
-        const modelKey = [KV_PREFIX, tupleId];
-        const existing = await kv.get<MeshModelRecord>(modelKey);
-
-        if (existing.value) {
-          const updated: MeshModelRecord = {
-            ...existing.value,
-            iq_prior: profile.iqPrior,
-            supports_reasoning: profile.supportsReasoning,
-            supports_vision: profile.supportsVision,
-            is_coding_specialist: profile.isCodingSpecialist,
-            context_window: ctxWindow,
-          };
-          await kv.set(modelKey, updated);
-          L1_CACHE.set(tupleId, updated);
-        } else {
-          const freshRecord: MeshModelRecord = {
-            tuple_id: tupleId,
-            provider_id: p.id,
-            model_id: item.id,
-            iq_prior: profile.iqPrior,
-            iq_verified: 1.0,
-            supports_reasoning: profile.supportsReasoning,
-            supports_vision: profile.supportsVision,
-            is_coding_specialist: profile.isCodingSpecialist,
-            context_window: ctxWindow,
-            ewma_ttft_ms: 900.0,
-            ewma_tps: 42.0,
-            alpha_success: 2.0,
-            beta_failure: 1.0,
-            success_count: 0,
-            failure_streak: 0,
-            cooldown_until: 0,
-            last_probed: 0,
-            last_error: null,
-          };
-          await kv.set(modelKey, freshRecord);
-          L1_CACHE.set(tupleId, freshRecord);
-        }
+  const router = async (task: SyncProviderTask): Promise<void> => {
+    const gate = perEndpointSyncGate.get(task.provider.id);
+    if (gate) {
+      try {
+        await gate;
+      } catch {
+        // prior wave failed; proceed with fresh attempt
       }
-      await kv.set(["mesh_discovery_meta_v5_2", p.id], now);
-    } catch {
-      // Retain existing catalog on discovery timeout
-    } finally {
-      clearTimeout(timer);
     }
-  });
+    const currentGate = runSyncProviderTask(task);
+    perEndpointSyncGate.set(task.provider.id, currentGate);
+    try {
+      await currentGate;
+    } finally {
+      if (perEndpointSyncGate.get(task.provider.id) === currentGate) {
+        perEndpointSyncGate.delete(task.provider.id);
+      }
+    }
+  };
 
-  await Promise.allSettled(syncTasks);
+  await Promise.allSettled(syncTasks.map(router));
+  perEndpointSyncGate.clear();
 }
+
 
 export interface ScoredCandidate {
   tupleId: string;
@@ -808,7 +1256,15 @@ async function getRankedCandidates(
   const catalog = await hydrateL1Cache(false);
   const now = Date.now();
 
-  const activeProviderIds = new Set(PROVIDERS.filter((p) => p.isConfigured()).map((p) => p.id));
+  const serviceJsonProviderList = await getServiceJsonBaselineProviders().catch((err) => {
+    console.error("service-json provider load promise rejected:", err);
+    return [];
+  });
+
+  const activeProviderIds = new Set([
+    ...PROVIDERS.filter((p) => p.isConfigured()).map((p) => p.id),
+    ...serviceJsonProviderList.filter((p) => p.isConfigured()).map((p) => p.id),
+  ]);
 
   const candidates: ScoredCandidate[] = [];
   for (const r of catalog.values()) {

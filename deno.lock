@@ -18,12 +18,10 @@
     "jsr:@std/semver@1": "1.0.5",
     "jsr:@std/uuid@^1.0.7": "1.0.9",
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
-    "npm:@preact/signals@^2.3.1": "2.3.1_preact@10.27.1",
     "npm:esbuild-wasm@0.25.7": "0.25.7",
     "npm:esbuild@0.25.7": "0.25.7",
-    "npm:preact-render-to-string@^6.5.11": "6.5.13_preact@10.27.1",
-    "npm:preact@^10.27.0": "10.27.1",
-    "npm:preact@^10.27.1": "10.27.1"
+    "npm:hono@4.6.14": "4.6.14",
+    "npm:preact-render-to-string@^6.5.11": "6.5.13_preact@10.27.1"
   },
   "jsr": {
     "@deno/esbuild-plugin@1.2.0": {
@@ -219,16 +217,6 @@
     "@opentelemetry/api@1.9.0": {
       "integrity": "sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg=="
     },
-    "@preact/signals-core@1.12.0": {
-      "integrity": "sha512-etWpENXm469RHMWIZGblgWrapbIGcRcbccEGGaLkFez3PjlI3XkBrUtSiNFsIfV/DN16PxMOxbWAZUIaLFyJDg=="
-    },
-    "@preact/signals@2.3.1_preact@10.27.1": {
-      "integrity": "sha512-nyuRIGmcwM/HjvFHhN2xUWfyla9D4llHt+prWoxjQfD6b5prO7CFPlG/xjJkP31Oic4KQXfH9SIhJFP9cy4lmg==",
-      "dependencies": [
-        "@preact/signals-core",
-        "preact"
-      ]
-    },
     "esbuild-wasm@0.25.7": {
       "integrity": "sha512-x3t1BlU59YOMtpwzayHxF4LPVujOvNKqm7y6jPvFKC13J8FmJRCdHPJwHq86er7ik+f7uwGcMbe+6KVzLGmsGw==",
       "bin": true
@@ -266,6 +254,9 @@
       "scripts": true,
       "bin": true
     },
+    "hono@4.6.14": {
+      "integrity": "sha512-j4VkyUp2xazGJ8eCCLN1Vm/bxdvm/j5ZuU9AIjLu9vapn2M44p9L3Ktr9Vnb2RN2QtcR/wVjZVMlT5k7GJQgPw=="
+    },
     "preact-render-to-string@6.5.13_preact@10.27.1": {
       "integrity": "sha512-iGPd+hKPMFKsfpR2vL4kJ6ZPcFIoWZEcBf0Dpm3zOpdVvj77aY8RlLiQji5OMrngEyaxGogeakTb54uS2FvA6w==",
       "dependencies": [
@@ -278,8 +269,7 @@
   },
   "workspace": {
     "dependencies": [
-      "npm:@preact/signals@^2.3.1",
-      "npm:preact@^10.27.1"
+      "npm:hono@4.6.14"
     ]
   }
 }
