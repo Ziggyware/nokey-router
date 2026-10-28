@@ -523,7 +523,19 @@ async function timedOpenAIFetch(
   const { content, reasoning } = splitThinkBlock(rawContent);
   const finalReasoning = rawReasoning.trim() || reasoning || null;
 
-  if (!toolCalls || toolCalls.length === 0) {
+  // Salvage: a reasoning-only completion is a VALID response. Reasoning
+  // models regularly spend the whole token budget thinking and return
+  // empty visible content; the old gate threw POISON_EMPTY and discarded
+  // a real answer. Promote the reasoning into content (the same thing
+  // splitThinkBlock does for <think> blocks) and count it as a win.
+  // Tool-call responses were already exempt; truly empty responses still
+  // throw POISON_EMPTY below.
+  const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
+  let finalContent = content;
+  if (!hasToolCalls && !content.trim() && finalReasoning) {
+    console.log(`[salvage] reasoning-only completion accepted (${finalReasoning.length} reasoning chars, 0 content chars)`);
+    finalContent = finalReasoning;
+  } else if (!hasToolCalls) {
     verifyCleanText(content);
   }
 
@@ -531,7 +543,7 @@ async function timedOpenAIFetch(
   const estTokens = Math.max(1, Math.ceil(totalChars / 4));
 
   return {
-    content,
+    content: finalContent,
     reasoningContent: finalReasoning,
     toolCalls,
     ttftMs: ttftHeaderMs,
@@ -1315,6 +1327,7 @@ async function getRankedCandidates(
   mode: RoutingMode,
   deterministic = false,
   requireVision = false,
+  opts: { includeCoolingDown?: boolean; verifiedOnly?: boolean } = {},
 ): Promise<ScoredCandidate[]> {
   await ensureCatalogSynced(false);
   const catalog = await hydrateL1Cache(false);
@@ -1330,14 +1343,17 @@ async function getRankedCandidates(
     ...serviceJsonProviderList.filter((p) => p.isConfigured()).map((p) => p.id),
   ]);
 
-  for (const [pid, state] of PROVIDER_BREAKER) {
-    if (state.openUntil > now) activeProviderIds.delete(pid);
+  if (!opts.includeCoolingDown) {
+    for (const [pid, state] of PROVIDER_BREAKER) {
+      if (state.openUntil > now) activeProviderIds.delete(pid);
+    }
   }
 
   const candidates: ScoredCandidate[] = [];
   for (const r of catalog.values()) {
     if (!activeProviderIds.has(r.provider_id)) continue;
-    if (r.cooldown_until > now) continue;
+    if (!opts.includeCoolingDown && r.cooldown_until > now) continue;
+    if (opts.verifiedOnly && r.success_count <= 0) continue;
     if (requireVision && !r.supports_vision) continue;
 
     const iqPrior = Number(r.iq_prior);
@@ -1511,6 +1527,62 @@ async function runCanaryProbeOnTopCandidates(limit: number = 4) {
   );
 }
 
+// Long-tail resurrection: most of the catalog sits at success_count == 0
+// (never proven) or has been unprobed for a day or more, and the head
+// canary only ever re-tests the top 4. This prober walks the tail --
+// least-recently-probed first -- and promotes anything that answers, so
+// the pool of proven choices keeps growing instead of the same head
+// failing forever.
+async function runResurrectionProbe(
+  limit: number = 6,
+): Promise<Array<{ tupleId: string; ok: boolean; passed?: boolean; error?: string }>> {
+  await ensureCatalogSynced(false);
+  const catalog = await hydrateL1Cache(false);
+  const now = Date.now();
+  const tail = [...catalog.values()]
+    .filter((r) => r.success_count === 0 || (r.last_probed ?? 0) < now - 24 * 3600_000)
+    .sort((a, b) => (a.last_probed ?? 0) - (b.last_probed ?? 0))
+    .slice(0, Math.max(1, Math.min(16, limit)));
+
+  const probePrompt = [
+    {
+      role: "user",
+      content: "Compute (23 * 19) + 14. Reply ONLY with the exact integer and nothing else.",
+    },
+  ];
+  const results: Array<{ tupleId: string; ok: boolean; passed?: boolean; error?: string }> = [];
+
+  for (const r of tail) {
+    const provider = await resolveProviderById(r.provider_id);
+    if (!provider || !provider.isConfigured()) {
+      results.push({ tupleId: r.tuple_id, ok: false, error: "provider unavailable" });
+      continue;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+    try {
+      const res = await provider.executeCompletion(r.model_id, probePrompt, ctrl.signal);
+      const passed = /\b451\b/.test(res.content.trim());
+      await recordTupleSuccess(r.tuple_id, res.ttftMs, res.totalMs, res.estTokens);
+      await atomicUpdateModel(r.tuple_id, (rec) => ({
+        ...rec,
+        iq_verified: passed ? 1.0 : 0.55,
+        last_probed: Date.now(),
+      }));
+      results.push({ tupleId: r.tuple_id, ok: true, passed });
+      console.log(`[resurrect] ${r.tuple_id} answered (canary ${passed ? "PASS" : "wrong answer"}) -- promoted`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Probe failed";
+      await recordTupleFailure(r.tuple_id, msg).catch(() => {});
+      await atomicUpdateModel(r.tuple_id, (rec) => ({ ...rec, last_probed: Date.now() })).catch(() => {});
+      results.push({ tupleId: r.tuple_id, ok: false, error: msg.slice(0, 120) });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return results;
+}
+
 // ============================================================================
 // 8. HONO HTTP APPLICATION & FRESH 2.0 COMPATIBILITY SHIM
 // ============================================================================
@@ -1633,6 +1705,30 @@ honoApp.post("/v1/sync", async (c) => {
   return c.json({ status: "catalog_synced", total_models: L1_CACHE.size });
 });
 
+honoApp.post("/v1/resurrect", async (c) => {
+  const adminSecret = Deno.env.get("ADMIN_SECRET");
+  if (adminSecret) {
+    const provided = c.req.header("x-admin-secret") || "";
+    if (!provided || !timingSafeCompare(provided, adminSecret)) {
+      return c.json({ error: { message: "Forbidden: Invalid x-admin-secret" } }, 403);
+    }
+  }
+  let limit = 6;
+  try {
+    const b = await c.req.json();
+    if (typeof b?.limit === "number") limit = b.limit;
+  } catch {
+    // no body: defaults apply
+  }
+  const results = await runResurrectionProbe(limit);
+  return c.json({
+    status: "resurrection_complete",
+    probed: results.length,
+    promoted: results.filter((r) => r.ok).length,
+    results,
+  });
+});
+
 honoApp.post("/v1/chat/completions", async (c) => {
   try {
     const body = await c.req.json();
@@ -1688,8 +1784,8 @@ honoApp.post("/v1/chat/completions", async (c) => {
 
     // Real synthesis generations run far past the old 18 s cap (a 550B free
     // model shows ~17.6 s TTFT alone), so the budget is sized for complete
-    // generations, and a failed wave falls through to the next three
-    // candidates instead of failing the whole request.
+    // generations, and the race escalates through widening tiers instead
+    // of failing the whole request.
     const timeoutMs = mode === "reasoning" ? 1800000 : mode === "fast" ? 450000 : 1200000;
     const masterAbort = new AbortController();
     const globalTimeout = setTimeout(() => masterAbort.abort(), timeoutMs);
@@ -1702,10 +1798,13 @@ honoApp.post("/v1/chat/completions", async (c) => {
     // if nobody has won yet, and EVERY failure instantly launches the next
     // candidate -- no stagger, no barrier. Up to 12 attempts, at most 5
     // in flight at once.
-    const RACE_MAX_ATTEMPTS = 12;
+    const RACE_TIER1_ATTEMPTS = Number(Deno.env.get("MESH_RACE_TIER1_ATTEMPTS")) || 12;
+    const RACE_TIER2_ATTEMPTS = 18;
+    const RACE_TIER3_ATTEMPTS = 10;
     const RACE_MAX_IN_FLIGHT = 5;
     const RACE_HEDGES_MS = [150, 400];
     let lastRaceError: unknown = null;
+    const triedTupleIds = new Set<string>();
 
     type RaceResult = CompletionResult & { candidate: ScoredCandidate };
 
@@ -1731,9 +1830,9 @@ honoApp.post("/v1/chat/completions", async (c) => {
       }
     };
 
-    const rollingRace = (): Promise<RaceResult | null> =>
+    const rollingRace = (pool: ScoredCandidate[], attemptCap: number): Promise<RaceResult | null> =>
       new Promise((resolve) => {
-        const attemptLimit = Math.min(ranked.length, RACE_MAX_ATTEMPTS);
+        const attemptLimit = Math.min(pool.length, attemptCap);
         let nextIdx = 0;
         let inFlight = 0;
         let done = false;
@@ -1750,7 +1849,8 @@ honoApp.post("/v1/chat/completions", async (c) => {
             return;
           }
           if (inFlight >= RACE_MAX_IN_FLIGHT) return;
-          const cand = ranked[nextIdx++];
+          const cand = pool[nextIdx++];
+          triedTupleIds.add(cand.tupleId);
           inFlight++;
           runCandidate(cand).then(
             (res) => {
@@ -1774,8 +1874,42 @@ honoApp.post("/v1/chat/completions", async (c) => {
       });
 
     try {
-      const winner = await rollingRace();
+      // Second-wind escalation: the router does not give up after the
+      // first pool. Tier 2 widens the net -- the next candidates,
+      // including providers sitting in circuit-breaker cooldown (a mercy
+      // attempt costs little, and breaker state is a stale snapshot).
+      // Tier 3 rescues cross-lane: any tuple that has EVER completed a
+      // request, from this lane or the fast lane. A 502 comes back only
+      // when the entire catalog is down.
+      let winner = await rollingRace(ranked, RACE_TIER1_ATTEMPTS);
+      let rescuedTier = winner ? 1 : 0;
+
+      if (!winner && !masterAbort.signal.aborted) {
+        const widened = await getRankedCandidates(mode, false, hasVisionPayload, { includeCoolingDown: true });
+        const tier2Pool = widened.filter((cand) => !triedTupleIds.has(cand.tupleId));
+        if (tier2Pool.length > 0) {
+          console.log(`[race] tier 1 exhausted (${triedTupleIds.size} attempts) -- escalating to tier 2 (${tier2Pool.length} more candidates, cooldown bypassed)`);
+          winner = await rollingRace(tier2Pool, RACE_TIER2_ATTEMPTS);
+          if (winner) rescuedTier = 2;
+        }
+      }
+
+      if (!winner && !masterAbort.signal.aborted) {
+        let proven = (await getRankedCandidates(mode, false, hasVisionPayload, { includeCoolingDown: true, verifiedOnly: true }))
+          .filter((cand) => !triedTupleIds.has(cand.tupleId));
+        if (proven.length === 0 && mode !== "fast") {
+          proven = (await getRankedCandidates("fast", false, hasVisionPayload, { includeCoolingDown: true, verifiedOnly: true }))
+            .filter((cand) => !triedTupleIds.has(cand.tupleId));
+        }
+        if (proven.length > 0) {
+          console.log(`[race] tier 2 exhausted -- escalating to tier 3 cross-lane rescue (${proven.length} proven-alive candidates)`);
+          winner = await rollingRace(proven, RACE_TIER3_ATTEMPTS);
+          if (winner) rescuedTier = 3;
+        }
+      }
+
       if (!winner) throw lastRaceError ?? new Error("All promises were rejected");
+      if (rescuedTier > 1) console.log(`[race] request rescued at tier ${rescuedTier} by ${winner.candidate.tupleId}`);
       masterAbort.abort();
 
       const completionId = `chatcmpl-${crypto.randomUUID()}`;
@@ -2030,6 +2164,9 @@ const app = Object.assign(honoApp, {
 if (typeof Deno.cron === "function") {
   Deno.cron("canary-probe", "*/30 * * * *", async () => {
     await runCanaryProbeOnTopCandidates(4);
+  });
+  Deno.cron("tail-resurrection", "*/10 * * * *", async () => {
+    await runResurrectionProbe(6);
   });
 }
 

@@ -129,3 +129,32 @@ QuickGen) plus an Install panel that mounts Architect-generated plugin
 code live. New Admin tab: locked until the existing Admin Secret is
 verified against the router with a live probe; then status cards, lane
 rankings, probe runner, and catalog force-sync.
+
+## Addendum 5 — 2026-10-27 (frontier resilience: escalate, resurrect, salvage)
+Three changes so the router expands its choices instead of giving up:
+1. Second-wind escalation. When the tier-1 race (12 attempts) exhausts,
+   dispatch escalates instead of returning 502: tier 2 widens to the next
+   candidates INCLUDING providers in circuit-breaker cooldown (mercy
+   attempts; breaker state is a stale snapshot), and tier 3 rescues
+   cross-lane to any tuple that has ever completed a request (this lane,
+   then the fast lane). getRankedCandidates gained includeCoolingDown /
+   verifiedOnly options; every attempt is tracked so tiers never retry a
+   tuple. Tier-1 size is env-tunable (MESH_RACE_TIER1_ATTEMPTS). Proven
+   locally with tier-1 forced to 1 attempt on a proven-dead tuple: the
+   log shows tier 2 engaging (273 candidates) and rescuing the request
+   in ~2.2 s.
+2. Long-tail resurrection. Of ~1,300 catalog tuples most sit unproven
+   (success_count == 0) and the canary only re-tests the top 4. A new
+   prober (cron every 10 min, POST /v1/resurrect, Admin tab button)
+   walks the least-recently-probed tail with the canary question and
+   promotes whatever answers -- verified IQ written back exactly like
+   the canary. First local run: probed 4, promoted 1
+   (kilo::cohere/north-mini-code:free), correctly buried 3 dead tuples.
+3. Salvage, don't discard. A reasoning-only completion (empty visible
+   content, full reasoning_content) used to die as POISON_EMPTY. The
+   parser now promotes the reasoning into content -- the same promotion
+   splitThinkBlock already did for <think> blocks -- and counts it as a
+   win. Tool-call responses were already exempt; truly empty responses
+   still throw. (Branch is type-checked and mirrors the existing think-
+   block behavior; no live reasoning-only response occurred during
+   local testing despite several tiny-token attempts.)

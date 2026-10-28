@@ -480,6 +480,7 @@
                         <h3 class="font-mono text-xs font-bold text-gray-200 uppercase tracking-wider">Catalog Control</h3>
                         <div class="flex gap-2 flex-wrap">
                             <button onclick="adminForceSync()" class="bg-dark-700 hover:bg-dark-600 text-neon-amber border border-neon-amber/40 px-3 py-1.5 text-xs font-mono uppercase transition">Force Catalog Sync</button>
+                            <button onclick="adminResurrect()" class="bg-dark-700 hover:bg-dark-600 text-neon-emerald border border-neon-emerald/40 px-3 py-1.5 text-xs font-mono uppercase transition">Resurrect Long Tail</button>
                             <button onclick="refreshAdminStatus()" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase transition">Refresh Status</button>
                         </div>
                         <pre id="adminSyncOut" class="bg-dark-900 border border-dark-600 p-3 text-[11px] text-gray-300 overflow-x-auto whitespace-pre-wrap min-h-16">// Sync results appear here</pre>
@@ -1466,6 +1467,18 @@
                 const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': getCredentials().adminSecret }, body: '{}' });
                 if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
                 out.textContent = JSON.stringify(data, null, 2);
+                refreshAdminStatus();
+            } catch (e) { out.textContent = `Error: ${e.message}`; }
+        }
+
+        async function adminResurrect() {
+            const out = document.getElementById('adminSyncOut');
+            out.textContent = 'Resurrecting long tail (probes up to 8 unproven tuples, about a minute)...';
+            try {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/resurrect`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': getCredentials().adminSecret }, body: JSON.stringify({ limit: 8 }) });
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                out.textContent = `Probed ${data.probed}, promoted ${data.promoted}
+` + (data.results || []).map(r => r.ok ? `ALIVE ${r.tupleId} (canary ${r.passed ? 'pass' : 'wrong answer'})` : `DEAD  ${r.tupleId} — ${r.error || ''}`).join('\n');
                 refreshAdminStatus();
             } catch (e) { out.textContent = `Error: ${e.message}`; }
         }
