@@ -674,7 +674,7 @@ function isFileReadable(path: string): boolean {
   }
 }
 
-function loadServiceJsonBody(path: string): string | null {
+function loadTextFile(path: string): string | null {
   if (!isFileReadable(path)) return null;
   try {
     return Deno.readTextFileSync(path);
@@ -694,7 +694,7 @@ async function discoverServiceJsonPath(): Promise<string | null> {
     for await (const item of Deno.readDir(".")) {
       if (item.name !== SERVICE_JSON_FILE) continue;
       const full = await Deno.realPath(item.name);
-      if (loadServiceJsonBody(full)) return full;
+      if (loadTextFile(full)) return full;
     }
     return null;
   } catch {
@@ -705,14 +705,14 @@ async function discoverServiceJsonPath(): Promise<string | null> {
 async function loadServiceJsonRegistry(): Promise<ServiceJsonRegistry | null> {
   if (SERVICE_JSON_REGISTRY) return SERVICE_JSON_REGISTRY;
 
-  const body = await loadServiceJsonBody(SERVICE_JSON_FILE);
+  const body = await loadTextFile(SERVICE_JSON_FILE);
   if (!body) {
     const discovered = await discoverServiceJsonPath();
     if (!discovered) {
       serviceJsonLoadError = "services.json-not-found";
       return null;
     }
-    const raw = loadServiceJsonBody(discovered);
+    const raw = loadTextFile(discovered);
     if (!raw) {
       serviceJsonLoadError = "services.json-not-readable";
       return null;
@@ -1500,6 +1500,15 @@ honoApp.use("/v1/*", async (c, next) => {
 });
 
 honoApp.get("/", async (c) => {
+        return new Response(loadTextFile("index.html"), {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+        });
+});
+honoApp.get("/health", async (c) => {
   const fastRank = (await getRankedCandidates("fast", true)).slice(0, 5);
   const smartRank = (await getRankedCandidates("smart", true)).slice(0, 5);
   const codeRank = (await getRankedCandidates("code", true)).slice(0, 5);
