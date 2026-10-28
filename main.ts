@@ -1177,12 +1177,37 @@ async function runSyncProviderTask(task: SyncProviderTask): Promise<void> {
   }
 }
 
+let catalogSyncInFlight = false;
+
+// Hot-path guard: a chat request must never wait out a full provider sweep
+// before its first upstream call. With a warm cache, a due sync refreshes
+// in the background and the request is served from the current catalog.
+// Only a cold start (empty cache) or an explicit admin force awaits it.
 async function ensureCatalogSynced(force: boolean = false): Promise<void> {
   const now = Date.now();
   if (!force && now - lastSyncCheckMemory < 60_000 && L1_CACHE.size > 0) {
     return;
   }
   lastSyncCheckMemory = now;
+  if (!force && L1_CACHE.size > 0) {
+    if (!catalogSyncInFlight) {
+      catalogSyncInFlight = true;
+      void (async () => {
+        try {
+          await runCatalogSyncBody(force);
+        } catch (err) {
+          console.error("background catalog sync failed:", err);
+        } finally {
+          catalogSyncInFlight = false;
+        }
+      })();
+    }
+    return;
+  }
+  await runCatalogSyncBody(force);
+}
+
+async function runCatalogSyncBody(force: boolean = false): Promise<void> {
 
   const serviceJsonProviderList = (await getServiceJsonBaselineProvidersInternal().catch((err) => {
     console.error("service-json provider load promise rejected:", err);
@@ -1669,31 +1694,22 @@ honoApp.post("/v1/chat/completions", async (c) => {
     const masterAbort = new AbortController();
     const globalTimeout = setTimeout(() => masterAbort.abort(), timeoutMs);
 
-    const raceWave = (wave: ScoredCandidate[]) =>
-      Promise.any(wave.map(async (cand, idx) => {
-      const staggerMs = idx === 0
-        ? 0
-        : idx === 1
-        ? 250
-        : mode === "fast"
-        ? 1300
-        : mode === "reasoning"
-        ? 3000
-        : 2200;
-      if (staggerMs > 0) {
-        await new Promise<void>((resolve, reject) => {
-          const t = setTimeout(resolve, staggerMs);
-          masterAbort.signal.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(t);
-              reject(new Error("ABORTED_BY_WINNER"));
-            },
-            { once: true },
-          );
-        });
-      }
+    // Rolling hedged race. The old design raced waves of 3 behind fixed
+    // staggers (0 / 250 / 1300-3000 ms) and a wave barrier, so a candidate
+    // that failed fast (a 401/402 answers in ~200 ms) still left the next
+    // candidate unstarted for a second or more. Now: the first candidate
+    // starts immediately, speculative hedges join at +150 ms and +400 ms
+    // if nobody has won yet, and EVERY failure instantly launches the next
+    // candidate -- no stagger, no barrier. Up to 12 attempts, at most 5
+    // in flight at once.
+    const RACE_MAX_ATTEMPTS = 12;
+    const RACE_MAX_IN_FLIGHT = 5;
+    const RACE_HEDGES_MS = [150, 400];
+    let lastRaceError: unknown = null;
 
+    type RaceResult = CompletionResult & { candidate: ScoredCandidate };
+
+    const runCandidate = async (cand: ScoredCandidate): Promise<RaceResult> => {
       const provider = await resolveProviderById(cand.providerId);
       if (!provider || !provider.isConfigured()) throw new Error("Provider missing or unconfigured");
 
@@ -1709,28 +1725,57 @@ honoApp.post("/v1/chat/completions", async (c) => {
       } catch (err: unknown) {
         if (!masterAbort.signal.aborted) {
           const msg = err instanceof Error ? err.message : "Exec error";
-          await recordTupleFailure(cand.tupleId, msg);
+          void recordTupleFailure(cand.tupleId, msg).catch(() => {});
         }
         throw err;
       }
-      }));
+    };
+
+    const rollingRace = (): Promise<RaceResult | null> =>
+      new Promise((resolve) => {
+        const attemptLimit = Math.min(ranked.length, RACE_MAX_ATTEMPTS);
+        let nextIdx = 0;
+        let inFlight = 0;
+        let done = false;
+        const finish = (w: RaceResult | null) => {
+          if (!done) {
+            done = true;
+            resolve(w);
+          }
+        };
+        const launch = () => {
+          if (done) return;
+          if (nextIdx >= attemptLimit) {
+            if (inFlight === 0) finish(null);
+            return;
+          }
+          if (inFlight >= RACE_MAX_IN_FLIGHT) return;
+          const cand = ranked[nextIdx++];
+          inFlight++;
+          runCandidate(cand).then(
+            (res) => {
+              inFlight--;
+              finish(res);
+            },
+            (err) => {
+              inFlight--;
+              lastRaceError = err;
+              // Instant refill: a failure (a 4XX above all) starts the
+              // next candidate now, not after a timer.
+              launch();
+            },
+          );
+        };
+        launch();
+        for (const hedgeMs of RACE_HEDGES_MS) {
+          setTimeout(() => launch(), hedgeMs);
+        }
+        masterAbort.signal.addEventListener("abort", () => finish(null), { once: true });
+      });
 
     try {
-      let winner: Awaited<ReturnType<typeof raceWave>> | null = null;
-      let lastWaveError: unknown = null;
-      for (
-        let waveStart = 0;
-        waveStart < Math.min(ranked.length, 9) && !winner;
-        waveStart += 3
-      ) {
-        if (masterAbort.signal.aborted) break;
-        try {
-          winner = await raceWave(ranked.slice(waveStart, waveStart + 3));
-        } catch (waveErr) {
-          lastWaveError = waveErr;
-        }
-      }
-      if (!winner) throw lastWaveError ?? new Error("All promises were rejected");
+      const winner = await rollingRace();
+      if (!winner) throw lastRaceError ?? new Error("All promises were rejected");
       masterAbort.abort();
 
       const completionId = `chatcmpl-${crypto.randomUUID()}`;

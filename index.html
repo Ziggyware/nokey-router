@@ -71,82 +71,105 @@
         .neon-border { border-color: rgba(0, 242, 254, 0.4); }
         /* Strict zero rounding */
         * { border-radius: 0 !important; }
+        .tab-view { min-height: 0; animation: nkFade .18s ease; }
+        #view-media, #view-architect, #view-plugins, #view-admin { overflow-y: auto; }
+        @keyframes nkFade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+        select, input, textarea { transition: border-color .15s ease, box-shadow .15s ease; }
+        select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 1px rgba(0,242,254,.25); }
     </style>
 </head>
-<body class="bg-dark-900 text-gray-100 min-h-screen flex flex-col antialiased cyber-grid selection:bg-neon-cyan selection:text-black">
+<body class="bg-dark-900 text-gray-100 h-screen flex flex-col overflow-hidden antialiased cyber-grid selection:bg-neon-cyan selection:text-black">
 
-    <!-- Top Navigation Bar -->
-    <header class="border-b border-dark-600 bg-dark-800/95 backdrop-blur sticky top-0 z-50 px-4 lg:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
-        <div class="flex items-center space-x-3">
-            <div class="w-9 h-9 bg-dark-700 border border-neon-cyan flex items-center justify-center neon-glow">
-                <i class="fa-solid fa-microchip text-neon-cyan text-base"></i>
-            </div>
-            <div>
-                <div class="flex items-center space-x-2">
-                    <h1 class="font-bold text-sm tracking-widest text-white uppercase font-mono">Nokey Router</h1>
-                    <span class="text-[10px] px-1.5 py-0.5 bg-neon-emerald/10 text-neon-emerald border border-neon-emerald/30 font-mono">v5.2-HARVEST</span>
+    <!-- Unified Top Bar: brand + tabs + connection in ONE bar. The shell is
+         a fixed-height flex column, so this bar never scrolls away. -->
+    <header class="flex-none border-b border-dark-600 bg-dark-800/95 backdrop-blur z-50">
+        <div class="px-4 lg:px-6 pt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <div class="flex items-center space-x-3 shrink-0">
+                <div class="w-9 h-9 bg-dark-700 border border-neon-cyan flex items-center justify-center neon-glow">
+                    <i class="fa-solid fa-microchip text-neon-cyan text-base"></i>
                 </div>
-                <p class="text-[11px] text-gray-400 font-mono">Empirical Sovereign AI Gateway</p>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="font-bold text-sm tracking-widest text-white uppercase font-mono">Nokey Router</h1>
+                        <span class="text-[10px] px-1.5 py-0.5 bg-neon-emerald/10 text-neon-emerald border border-neon-emerald/30 font-mono">v5.2-HARVEST</span>
+                    </div>
+                    <p class="text-[11px] text-gray-400 font-mono">Empirical Sovereign AI Gateway</p>
+                </div>
             </div>
+
+            <nav class="flex-1 min-w-0 flex items-center space-x-1 overflow-x-auto font-mono text-xs">
+                <button onclick="switchTab('chat')" id="tab-chat" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-neon-cyan text-neon-cyan bg-dark-700/50 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-terminal"></i>
+                    <span>Workspace & Chat</span>
+                </button>
+                <button onclick="switchTab('harvester')" id="tab-harvester" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-transparent text-neon-amber hover:text-neon-amber/80 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-satellite-dish"></i>
+                    <span>Endpoint Harvester</span>
+                </button>
+                <button onclick="switchTab('catalog')" id="tab-catalog" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-brain"></i>
+                    <span>Mesh Catalog</span>
+                </button>
+                <button onclick="switchTab('media')" id="tab-media" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>Image & Video Gen</span>
+                </button>
+                <button onclick="switchTab('architect')" id="tab-architect" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-transparent text-neon-emerald hover:text-neon-emerald/80 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-code-merge"></i>
+                    <span>Vajra Architect</span>
+                </button>
+                <button onclick="switchTab('plugins')" id="tab-plugins" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-puzzle-piece"></i>
+                    <span>Plugins</span>
+                </button>
+                <button onclick="switchTab('admin')" id="tab-admin" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-transparent text-neon-purple hover:text-neon-purple/80 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-user-shield"></i>
+                    <span>Admin</span>
+                </button>
+                <button onclick="switchTab('inspector')" id="tab-inspector" class="tab-btn whitespace-nowrap px-3 py-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-bug"></i>
+                    <span>Inspector</span>
+                </button>
+            </nav>
+
+            <button onclick="toggleCredentialBar()" title="Show or hide the connection bar" class="shrink-0 bg-dark-700 hover:bg-dark-600 text-gray-300 border border-dark-500 px-2.5 py-1.5 text-xs font-mono uppercase transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-eye-slash"></i>
+                <span class="hidden xl:inline">Connection</span>
+            </button>
         </div>
 
-        <!-- Secure Credential Bar -->
-        <div class="flex items-center space-x-2 bg-dark-900 border border-dark-600 p-1">
-            <div class="flex items-center px-2 space-x-1.5">
-                <i class="fa-solid fa-server text-[11px] text-neon-cyan"></i>
-                <input type="text" id="routerBaseUrl" placeholder="Router URL" class="bg-transparent text-xs text-gray-200 focus:outline-none w-52 font-mono">
+        <!-- Connection bar (self-hiding panel) -->
+        <div id="credentialBar" class="px-4 lg:px-6 pb-2.5 pt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div class="flex flex-wrap items-center gap-y-1 bg-dark-900 border border-dark-600 p-1">
+                <div class="flex items-center px-2 space-x-1.5">
+                    <i class="fa-solid fa-server text-[11px] text-neon-cyan"></i>
+                    <input type="text" id="routerBaseUrl" placeholder="Router URL" class="bg-transparent text-xs text-gray-200 focus:outline-none w-52 font-mono">
+                </div>
+                <div class="h-4 w-px bg-dark-600"></div>
+                <div class="flex items-center px-2 space-x-1.5">
+                    <i class="fa-solid fa-key text-[11px] text-neon-amber"></i>
+                    <input type="password" id="routerApiKey" placeholder="API Key (Encrypted)" class="bg-transparent text-xs text-gray-200 focus:outline-none w-32 font-mono">
+                </div>
+                <div class="h-4 w-px bg-dark-600"></div>
+                <div class="flex items-center px-2 space-x-1.5">
+                    <i class="fa-solid fa-shield text-[11px] text-neon-purple"></i>
+                    <input type="password" id="adminSecret" placeholder="Admin Secret" class="bg-transparent text-xs text-gray-200 focus:outline-none w-28 font-mono">
+                </div>
+                <button onclick="saveAndTestCredentials()" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1 text-xs font-mono uppercase tracking-wider transition flex items-center space-x-1">
+                    <i class="fa-solid fa-bolt" id="connIcon"></i>
+                    <span class="hidden sm:inline">Sync</span>
+                </button>
             </div>
-            <div class="h-4 w-px bg-dark-600"></div>
-            <div class="flex items-center px-2 space-x-1.5">
-                <i class="fa-solid fa-key text-[11px] text-neon-amber"></i>
-                <input type="password" id="routerApiKey" placeholder="API Key (Encrypted)" class="bg-transparent text-xs text-gray-200 focus:outline-none w-32 font-mono">
-            </div>
-            <div class="h-4 w-px bg-dark-600"></div>
-            <div class="flex items-center px-2 space-x-1.5">
-                <i class="fa-solid fa-shield text-[11px] text-neon-purple"></i>
-                <input type="password" id="adminSecret" placeholder="Admin Secret" class="bg-transparent text-xs text-gray-200 focus:outline-none w-28 font-mono">
-            </div>
-            <button onclick="saveAndTestCredentials()" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1 text-xs font-mono uppercase tracking-wider transition flex items-center space-x-1">
-                <i class="fa-solid fa-bolt" id="connIcon"></i>
-                <span class="hidden sm:inline">Sync</span>
-            </button>
+            <span class="text-[10px] font-mono text-gray-500">Stored only in this browser. The Admin Secret unlocks the Admin tab and admin plugins.</span>
         </div>
     </header>
 
-    <!-- Main Navigation Tabs -->
-    <nav class="bg-dark-800 border-b border-dark-600 px-4 lg:px-6 flex space-x-2 overflow-x-auto font-mono text-xs">
-        <button onclick="switchTab('chat')" id="tab-chat" class="tab-btn px-4 py-2.5 border-b-2 border-neon-cyan text-neon-cyan bg-dark-700/50 flex items-center space-x-2 transition">
-            <i class="fa-solid fa-terminal"></i>
-            <span>Workspace & Chat</span>
-        </button>
-        <button onclick="switchTab('harvester')" id="tab-harvester" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-neon-amber hover:text-neon-amber/80 flex items-center space-x-2 transition">
-            <i class="fa-solid fa-satellite-dish"></i>
-            <span>Endpoint Harvester & Auto-Injector</span>
-        </button>
-        <button onclick="switchTab('catalog')" id="tab-catalog" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
-            <i class="fa-solid fa-brain"></i>
-            <span>Mesh Catalog & Health</span>
-        </button>
-        <button onclick="switchTab('media')" id="tab-media" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
-            <span>Image & Video Gen</span>
-        </button>
-        <button onclick="switchTab('architect')" id="tab-architect" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-neon-emerald hover:text-neon-emerald/80 flex items-center space-x-2 transition">
-            <i class="fa-solid fa-code-merge"></i>
-            <span>Vajra Core Architect</span>
-        </button>
-        <button onclick="switchTab('inspector')" id="tab-inspector" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
-            <i class="fa-solid fa-bug"></i>
-            <span>Telemetry & Inspector</span>
-        </button>
-    </nav>
-
     <!-- Main Content Container -->
-    <main class="flex-1 p-4 lg:p-6 max-w-7xl w-full mx-auto flex flex-col">
+    <main class="flex-1 min-h-0 w-full p-4 lg:p-6 flex flex-col overflow-hidden">
 
         <!-- TAB 1: CHAT & WORKSPACE -->
-        <section id="view-chat" class="tab-view flex-1 flex flex-col lg:flex-row gap-4 h-[calc(100vh-140px)] overflow-hidden">
-            <div class="lg:w-72 bg-dark-800 border border-dark-600 p-4 flex flex-col space-y-4 shrink-0 overflow-y-auto">
+        <section id="view-chat" class="tab-view flex-1 flex flex-col lg:flex-row gap-4 h-full min-h-0 overflow-hidden">
+            <div id="paramsPanel" class="lg:w-72 bg-dark-800 border border-dark-600 p-4 flex flex-col space-y-4 shrink-0 overflow-y-auto min-h-0">
                 <div class="flex items-center justify-between border-b border-dark-600 pb-2">
                     <h2 class="font-mono text-xs font-bold text-neon-cyan uppercase tracking-wider">Routing Parameters</h2>
                     <button onclick="clearChat()" class="text-[10px] text-gray-400 hover:text-neon-rose font-mono uppercase"><i class="fa-solid fa-trash-can mr-1"></i>Reset</button>
@@ -202,8 +225,14 @@
                 </div>
             </div>
 
-            <div class="flex-1 bg-dark-800 border border-dark-600 flex flex-col overflow-hidden relative">
-                <div id="chatMessages" class="flex-1 p-4 lg:p-6 overflow-y-auto space-y-4 font-sans text-sm">
+            <div class="flex-1 min-w-0 min-h-0 bg-dark-800 border border-dark-600 flex flex-col overflow-hidden relative">
+                <div class="flex items-center justify-between px-3 py-1.5 bg-dark-900/60 border-b border-dark-600 shrink-0">
+                    <span class="font-mono text-[11px] text-gray-400 uppercase tracking-wider"><i class="fa-solid fa-comments text-neon-cyan mr-1.5"></i>Mesh Chat</span>
+                    <button onclick="toggleParamsPanel()" title="Show or hide routing parameters" class="text-[11px] font-mono text-gray-300 hover:text-neon-cyan uppercase flex items-center space-x-1.5 transition">
+                        <i class="fa-solid fa-sliders"></i><span>Parameters</span>
+                    </button>
+                </div>
+                <div id="chatMessages" class="flex-1 min-h-0 p-4 lg:p-6 overflow-y-auto space-y-4 font-sans text-sm">
                     <div class="flex items-start space-x-3 border-l-2 border-neon-cyan bg-dark-700/40 p-4">
                         <div class="w-7 h-7 bg-dark-900 border border-neon-cyan flex items-center justify-center text-neon-cyan shrink-0 font-mono text-xs">AI</div>
                         <div class="space-y-1 text-gray-200">
@@ -377,6 +406,86 @@
             </div>
             <div class="bg-dark-800 border border-dark-600 p-4 flex-1 overflow-y-auto font-mono text-xs space-y-4" id="inspectorLogs">
                 <div class="text-gray-500">// Inspector monitoring live HTTP traffic...</div>
+            </div>
+        </section>
+
+        <!-- TAB 7: PLUGINS -->
+        <section id="view-plugins" class="tab-view hidden flex-1 flex flex-col space-y-4">
+            <div class="bg-dark-800 border border-dark-600 p-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-xs font-bold text-neon-cyan uppercase font-mono tracking-wider">Plugin Deck</h2>
+                    <p class="text-[11px] text-gray-400 font-mono">Live extensions mounted against the router API. Plugins register with <span class="text-neon-cyan">NokeyPlugins.register(...)</span> — the Architect can write one, and you install it here without a reload.</p>
+                </div>
+                <button onclick="document.getElementById('pluginInstallPanel').classList.toggle('hidden')" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase tracking-wider flex items-center space-x-1.5 transition">
+                    <i class="fa-solid fa-plus"></i><span>Install Plugin</span>
+                </button>
+            </div>
+
+            <div id="pluginInstallPanel" class="hidden bg-dark-800 border border-dark-600 p-4 space-y-3">
+                <label class="block text-[11px] font-mono text-gray-400">Plugin code — receives <span class="text-neon-cyan">NokeyPlugins</span> and <span class="text-neon-cyan">ctx</span> (ctx.base(), ctx.apiKey(), ctx.adminSecret(), ctx.fetchJson, ctx.toast, ctx.log, ctx.esc)</label>
+                <textarea id="pluginCode" rows="7" spellcheck="false" class="w-full bg-dark-900 border border-dark-600 p-3 text-xs text-gray-100 font-mono focus:outline-none focus:border-neon-cyan resize-y">NokeyPlugins.register({
+  id: 'hello-mesh',
+  name: 'Hello Mesh',
+  icon: 'fa-solid fa-hand',
+  description: 'Example plugin: pings the router health endpoint.',
+  mount(el, ctx) {
+    el.innerHTML = '<button class="bg-dark-700 border border-neon-cyan/40 text-neon-cyan px-3 py-1.5 text-xs font-mono uppercase">Ping /health</button><pre class="mt-3 text-[11px] text-gray-300 whitespace-pre-wrap"></pre>';
+    const out = el.querySelector('pre');
+    el.querySelector('button').onclick = async () => {
+      const { data } = await ctx.fetchJson(ctx.base() + '/health');
+      out.textContent = JSON.stringify(data, null, 2).slice(0, 800);
+    };
+  }
+});</textarea>
+                <div class="flex items-center gap-2">
+                    <button onclick="installPluginFromCode()" class="bg-dark-700 hover:bg-dark-600 text-neon-emerald border border-neon-emerald/50 px-3 py-1.5 text-xs font-mono uppercase tracking-wider transition">Install &amp; Mount</button>
+                    <span class="text-[10px] font-mono text-gray-500">Runs in this page only. Admin plugins additionally require the Admin Secret.</span>
+                </div>
+            </div>
+
+            <div id="pluginGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start"></div>
+        </section>
+
+        <!-- TAB 8: ADMIN -->
+        <section id="view-admin" class="tab-view hidden flex-1 flex flex-col space-y-4">
+            <div id="adminLocked" class="bg-dark-800 border border-dark-600 p-6 max-w-xl mx-auto w-full mt-6 text-center space-y-4">
+                <i class="fa-solid fa-user-shield text-neon-purple text-3xl"></i>
+                <h2 class="text-sm font-bold text-white uppercase font-mono tracking-wider">Admin System Locked</h2>
+                <p class="text-xs text-gray-400 font-mono">Enter the <span class="text-neon-purple">Admin Secret</span> in the connection bar — the same password the router guards /v1/probe and /v1/sync with — then verify. Verification runs one live probe against the router.</p>
+                <button onclick="unlockAdmin()" id="adminUnlockBtn" class="bg-dark-700 hover:bg-dark-600 text-neon-purple border border-neon-purple/50 px-4 py-2 text-xs font-mono uppercase tracking-wider transition">Verify &amp; Unlock</button>
+                <p id="adminLockMsg" class="text-[11px] font-mono text-gray-500"></p>
+            </div>
+
+            <div id="adminPanel" class="hidden flex-col space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xs font-bold text-neon-purple uppercase font-mono tracking-wider"><i class="fa-solid fa-user-shield mr-2"></i>Admin System</h2>
+                    <button onclick="lockAdmin()" class="text-[11px] font-mono text-gray-400 hover:text-neon-rose uppercase transition">Lock</button>
+                </div>
+                <div id="adminStats" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                    <div class="bg-dark-800 border border-dark-600 p-4 space-y-3">
+                        <h3 class="font-mono text-xs font-bold text-gray-200 uppercase tracking-wider">Live Probe (Canary)</h3>
+                        <div class="flex gap-2">
+                            <select id="adminProbeMode" class="flex-1 bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono">
+                                <option value="fast">free:fast</option>
+                                <option value="smart" selected>free:smart</option>
+                                <option value="code">free:code</option>
+                                <option value="reasoning">free:reasoning</option>
+                            </select>
+                            <button onclick="adminRunProbe()" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase transition">Run Probe</button>
+                        </div>
+                        <pre id="adminProbeOut" class="bg-dark-900 border border-dark-600 p-3 text-[11px] text-gray-300 overflow-x-auto whitespace-pre-wrap min-h-16">// Probe results appear here</pre>
+                    </div>
+                    <div class="bg-dark-800 border border-dark-600 p-4 space-y-3">
+                        <h3 class="font-mono text-xs font-bold text-gray-200 uppercase tracking-wider">Catalog Control</h3>
+                        <div class="flex gap-2 flex-wrap">
+                            <button onclick="adminForceSync()" class="bg-dark-700 hover:bg-dark-600 text-neon-amber border border-neon-amber/40 px-3 py-1.5 text-xs font-mono uppercase transition">Force Catalog Sync</button>
+                            <button onclick="refreshAdminStatus()" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase transition">Refresh Status</button>
+                        </div>
+                        <pre id="adminSyncOut" class="bg-dark-900 border border-dark-600 p-3 text-[11px] text-gray-300 overflow-x-auto whitespace-pre-wrap min-h-16">// Sync results appear here</pre>
+                        <div id="adminLanes" class="space-y-2"></div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -1089,6 +1198,285 @@
             `;
             showToast('Meta-agent chat cleared');
         }
+        // ================= Shell: self-hiding panels =================
+        function toggleCredentialBar() {
+            const bar = document.getElementById('credentialBar');
+            bar.classList.toggle('hidden');
+            try { localStorage.setItem('nk_cred_hidden', bar.classList.contains('hidden') ? '1' : '0'); } catch (e) {}
+        }
+        function toggleParamsPanel() {
+            const p = document.getElementById('paramsPanel');
+            p.classList.toggle('hidden');
+            try { localStorage.setItem('nk_params_hidden', p.classList.contains('hidden') ? '1' : '0'); } catch (e) {}
+        }
+        (function initPanelStates() {
+            try {
+                if (localStorage.getItem('nk_cred_hidden') === '1') document.getElementById('credentialBar').classList.add('hidden');
+                const pref = localStorage.getItem('nk_params_hidden');
+                if (pref === '1' || (pref === null && window.innerWidth < 1024)) document.getElementById('paramsPanel').classList.add('hidden');
+            } catch (e) {}
+        })();
+
+        // ================= Plugin system =================
+        // A plugin is { id, name, icon, description, admin?, mount(el, ctx) }.
+        // ctx gives plugins the router coordinates and shared helpers, so a
+        // plugin the Architect generates can be pasted into the Install panel
+        // and run immediately.
+        const pluginCtx = {
+            base: () => getCredentials().baseUrl,
+            apiKey: () => getCredentials().apiKey,
+            adminSecret: () => getCredentials().adminSecret,
+            fetchJson,
+            toast: (m, t) => showToast(m, t),
+            log: (msg) => { try { logInspector('PLUGIN', 'local', {}, String(msg), 200); } catch (e) {} },
+            esc: (s) => escapeHtml(String(s)),
+        };
+        let pluginsRendered = false;
+        window.NokeyPlugins = {
+            _list: [],
+            register(plugin) {
+                this._list = this._list.filter(p => p.id !== plugin.id);
+                this._list.push(plugin);
+                if (pluginsRendered) renderPluginCard(plugin);
+            }
+        };
+        function renderPlugins() {
+            const grid = document.getElementById('pluginGrid');
+            grid.innerHTML = '';
+            window.NokeyPlugins._list.forEach(renderPluginCard);
+            pluginsRendered = true;
+        }
+        function renderPluginCard(plugin) {
+            const grid = document.getElementById('pluginGrid');
+            const old = document.getElementById(`plugin-card-${plugin.id}`);
+            if (old) old.remove();
+            const card = document.createElement('div');
+            card.id = `plugin-card-${plugin.id}`;
+            card.className = 'bg-dark-800 border border-dark-600 p-4 space-y-3';
+            card.innerHTML = `
+                <div class="flex items-start justify-between gap-2 border-b border-dark-600 pb-2">
+                    <div class="flex items-center space-x-2">
+                        <i class="${plugin.icon || 'fa-solid fa-puzzle-piece'} text-neon-cyan"></i>
+                        <span class="font-mono text-xs font-bold text-gray-100 uppercase tracking-wider">${escapeHtml(String(plugin.name || plugin.id))}</span>
+                    </div>
+                    ${plugin.admin ? '<span class="text-[9px] px-1.5 py-0.5 border border-neon-purple/40 text-neon-purple font-mono uppercase">Admin</span>' : '<span class="text-[9px] px-1.5 py-0.5 border border-neon-cyan/30 text-neon-cyan font-mono uppercase">Plugin</span>'}
+                </div>
+                <p class="text-[11px] text-gray-400 font-mono">${escapeHtml(String(plugin.description || ''))}</p>
+                <div class="plugin-body"></div>`;
+            grid.appendChild(card);
+            const body = card.querySelector('.plugin-body');
+            if (plugin.admin && !getCredentials().adminSecret) {
+                body.innerHTML = '<p class="text-[11px] font-mono text-neon-purple"><i class="fa-solid fa-lock mr-1"></i>Requires the Admin Secret in the connection bar.</p>';
+                return;
+            }
+            try { plugin.mount(body, pluginCtx); } catch (e) { body.innerHTML = `<p class="text-[11px] font-mono text-neon-rose">Mount error: ${escapeHtml(String(e.message))}</p>`; }
+        }
+        function installPluginFromCode() {
+            const code = document.getElementById('pluginCode').value;
+            try {
+                new Function('NokeyPlugins', 'ctx', code)(window.NokeyPlugins, pluginCtx);
+                showToast('Plugin installed');
+            } catch (e) {
+                showToast(`Plugin error: ${e.message}`, 'error');
+            }
+        }
+
+        // ---- Built-in plugin: Lane Probe (admin) ----
+        NokeyPlugins.register({
+            id: 'lane-probe', name: 'Lane Probe', icon: 'fa-solid fa-satellite-dish', admin: true,
+            description: 'Runs the server canary against a lane\'s top candidates and writes verified IQ back to the catalog.',
+            mount(el, ctx) {
+                el.innerHTML = `
+                    <div class="flex gap-2">
+                        <select class="lp-mode flex-1 bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono">
+                            <option value="fast">free:fast</option><option value="smart" selected>free:smart</option><option value="code">free:code</option><option value="reasoning">free:reasoning</option>
+                        </select>
+                        <button class="lp-run bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase transition">Probe</button>
+                    </div>
+                    <div class="lp-out mt-3 space-y-1 text-[11px] font-mono text-gray-300"></div>`;
+                const out = el.querySelector('.lp-out');
+                el.querySelector('.lp-run').onclick = async () => {
+                    out.innerHTML = '<span class="text-gray-500">Probing...</span>';
+                    try {
+                        const { res, data } = await ctx.fetchJson(`${ctx.base()}/v1/probe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': ctx.adminSecret() }, body: JSON.stringify({ mode: el.querySelector('.lp-mode').value }) });
+                        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                        out.innerHTML = (data.results || []).map(r => r.ok
+                            ? `<div class="text-neon-emerald">PASS ${ctx.esc(r.tupleId)} <span class="text-gray-500">${r.ms} ms</span></div>`
+                            : `<div class="text-neon-rose">FAIL ${ctx.esc(r.tupleId)} <span class="text-gray-500">${ctx.esc(r.error || '')}</span></div>`).join('') || '<span class="text-gray-500">No candidates</span>';
+                    } catch (e) { out.innerHTML = `<span class="text-neon-rose">${ctx.esc(e.message)}</span>`; }
+                };
+            }
+        });
+
+        // ---- Built-in plugin: Catalog Sync (admin) ----
+        NokeyPlugins.register({
+            id: 'catalog-sync', name: 'Catalog Sync', icon: 'fa-solid fa-rotate', admin: true,
+            description: 'Forces a full provider sweep: re-discovers models, re-applies trust clamps, reports catalog totals.',
+            mount(el, ctx) {
+                el.innerHTML = `
+                    <button class="cs-run bg-dark-700 hover:bg-dark-600 text-neon-amber border border-neon-amber/40 px-3 py-1.5 text-xs font-mono uppercase transition">Force Sync</button>
+                    <pre class="cs-out mt-3 text-[11px] font-mono text-gray-300 whitespace-pre-wrap"></pre>`;
+                const out = el.querySelector('.cs-out');
+                el.querySelector('.cs-run').onclick = async () => {
+                    out.textContent = 'Syncing...';
+                    try {
+                        const { res, data } = await ctx.fetchJson(`${ctx.base()}/v1/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': ctx.adminSecret() }, body: '{}' });
+                        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                        out.textContent = JSON.stringify(data, null, 2);
+                    } catch (e) { out.textContent = `Error: ${e.message}`; }
+                };
+            }
+        });
+
+        // ---- Built-in plugin: Model Ping ----
+        NokeyPlugins.register({
+            id: 'model-ping', name: 'Model Ping', icon: 'fa-solid fa-stopwatch',
+            description: 'Sends a minimal chat completion to any model id or lane and reports round-trip latency and the serving provider.',
+            mount(el, ctx) {
+                el.innerHTML = `
+                    <div class="flex gap-2">
+                        <input class="mp-model flex-1 bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono" list="mpDatalist" value="free:smart" placeholder="model id or free:lane">
+                        <datalist id="mpDatalist"></datalist>
+                        <button class="mp-run bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase transition">Ping</button>
+                    </div>
+                    <div class="mp-out mt-3 text-[11px] font-mono text-gray-300 space-y-1"></div>`;
+                const out = el.querySelector('.mp-out');
+                const list = el.querySelector('#mpDatalist');
+                (async () => {
+                    try {
+                        const { data } = await ctx.fetchJson(`${ctx.base()}/v1/models`, { headers: { 'Authorization': `Bearer ${ctx.apiKey()}` } });
+                        list.innerHTML = (data.data || []).map(m => `<option value="${ctx.esc(m.id)}">`).join('');
+                    } catch (e) {}
+                })();
+                el.querySelector('.mp-run').onclick = async () => {
+                    const model = el.querySelector('.mp-model').value.trim();
+                    out.innerHTML = '<span class="text-gray-500">Pinging...</span>';
+                    const t0 = performance.now();
+                    try {
+                        const { res, data } = await ctx.fetchJson(`${ctx.base()}/v1/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ctx.apiKey()}` }, body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with exactly: pong' }], max_tokens: 32 }) });
+                        const ms = Math.round(performance.now() - t0);
+                        if (!res.ok) throw new Error(data.error?.message || data.error || `HTTP ${res.status}`);
+                        const content = data.choices?.[0]?.message?.content || '';
+                        out.innerHTML = `<div class="text-neon-emerald">${ms} ms — served by ${ctx.esc(data.provider || '?')} / ${ctx.esc(data.model || model)}</div><div class="text-gray-400">${ctx.esc(content.slice(0, 120))}</div>`;
+                    } catch (e) { out.innerHTML = `<span class="text-neon-rose">${ctx.esc(e.message)}</span>`; }
+                };
+            }
+        });
+
+        // ---- Built-in plugin: Image QuickGen ----
+        NokeyPlugins.register({
+            id: 'image-quickgen', name: 'Image QuickGen', icon: 'fa-solid fa-image',
+            description: 'One-shot image generation through POST /v1/images/generations (nokey-image), rendered inline.',
+            mount(el, ctx) {
+                el.innerHTML = `
+                    <div class="flex gap-2">
+                        <input class="iq-prompt flex-1 bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono" placeholder="a lighthouse at dusk, digital painting">
+                        <button class="iq-run bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase transition">Generate</button>
+                    </div>
+                    <div class="iq-out mt-3"></div>`;
+                const out = el.querySelector('.iq-out');
+                el.querySelector('.iq-run').onclick = async () => {
+                    const prompt = el.querySelector('.iq-prompt').value.trim();
+                    if (!prompt) return;
+                    out.innerHTML = '<span class="text-[11px] font-mono text-gray-500">Generating (can take ~30s)...</span>';
+                    try {
+                        const { res, data } = await ctx.fetchJson(`${ctx.base()}/v1/images/generations`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ctx.apiKey()}` }, body: JSON.stringify({ prompt, model: 'nokey-image', response_format: 'url' }) });
+                        if (!res.ok) throw new Error(data.error?.message || data.error || `HTTP ${res.status}`);
+                        const item = (data.data || [])[0] || {};
+                        const src = item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : '');
+                        if (!src) throw new Error('No image in response');
+                        out.innerHTML = `<a href="${ctx.esc(src)}" target="_blank" rel="noopener"><img src="${ctx.esc(src)}" class="w-full border border-dark-600" alt="generated image"></a>`;
+                    } catch (e) { out.innerHTML = `<span class="text-[11px] font-mono text-neon-rose">${ctx.esc(e.message)}</span>`; }
+                };
+            }
+        });
+
+        // ================= Admin system =================
+        // Gated by the SAME Admin Secret the router checks on /v1/probe and
+        // /v1/sync. Unlocking verifies the secret with one live probe; the
+        // secret itself never leaves the connection bar field.
+        let adminUnlocked = false;
+        function refreshAdminGate() {
+            document.getElementById('adminLocked').classList.toggle('hidden', adminUnlocked);
+            const panel = document.getElementById('adminPanel');
+            panel.classList.toggle('hidden', !adminUnlocked);
+            panel.classList.toggle('flex', adminUnlocked);
+            if (adminUnlocked) refreshAdminStatus();
+        }
+        function lockAdmin() { adminUnlocked = false; refreshAdminGate(); }
+        async function unlockAdmin() {
+            const msg = document.getElementById('adminLockMsg');
+            const secret = getCredentials().adminSecret;
+            if (!secret) {
+                msg.innerText = 'No Admin Secret entered — add it in the connection bar first.';
+                msg.className = 'text-[11px] font-mono text-neon-rose';
+                return;
+            }
+            msg.innerText = 'Verifying against the router (live probe)...';
+            msg.className = 'text-[11px] font-mono text-gray-400';
+            try {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/probe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret }, body: JSON.stringify({ mode: 'fast' }) });
+                if (!res.ok) throw new Error(res.status === 403 ? 'Router rejected the secret (403).' : (data.error || `HTTP ${res.status}`));
+                adminUnlocked = true;
+                refreshAdminGate();
+                showToast('Admin system unlocked');
+            } catch (e) {
+                msg.innerText = e.message;
+                msg.className = 'text-[11px] font-mono text-neon-rose';
+            }
+        }
+        async function refreshAdminStatus() {
+            if (!adminUnlocked) return;
+            try {
+                const { data } = await fetchJson(`${getCredentials().baseUrl}/health`);
+                const sec = data.security || {};
+                const cards = [
+                    ['Status', data.status || '—', 'text-neon-emerald'],
+                    ['Engine', data.engine || '—', 'text-gray-100'],
+                    ['Catalog Entries', sec.l1_cache_entries ?? '—', 'text-neon-cyan'],
+                    ['Admin Guard', sec.admin_guard_enabled ? 'ENABLED' : 'NOT SET', sec.admin_guard_enabled ? 'text-neon-emerald' : 'text-neon-amber'],
+                ];
+                document.getElementById('adminStats').innerHTML = cards.map(([k, v, c]) => `
+                    <div class="bg-dark-800 border border-dark-600 p-3">
+                        <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider">${k}</div>
+                        <div class="font-mono text-sm font-bold ${c} truncate" title="${escapeHtml(String(v))}">${escapeHtml(String(v))}</div>
+                    </div>`).join('');
+                const lanes = [['Fast', data.current_best_fast], ['Smart', data.current_best_smart], ['Code', data.current_best_code], ['Reasoning', data.current_best_reasoning]];
+                document.getElementById('adminLanes').innerHTML = lanes.map(([name, list]) => `
+                    <div class="bg-dark-900 border border-dark-600 p-2">
+                        <div class="text-[10px] font-mono text-gray-500 uppercase">${name} — top ranked</div>
+                        ${(list || []).slice(0, 3).map(x => `<div class="text-[11px] font-mono text-gray-300 truncate">${escapeHtml(String(x.tupleId || ''))}</div>`).join('') || '<div class="text-[11px] text-gray-600 font-mono">none</div>'}
+                    </div>`).join('');
+            } catch (e) { showToast(`Status error: ${e.message}`, 'error'); }
+        }
+        async function adminRunProbe() {
+            const out = document.getElementById('adminProbeOut');
+            out.textContent = 'Probing...';
+            try {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/probe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': getCredentials().adminSecret }, body: JSON.stringify({ mode: document.getElementById('adminProbeMode').value }) });
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                out.textContent = (data.results || []).map(r => r.ok ? `PASS ${r.tupleId} (${r.ms} ms)` : `FAIL ${r.tupleId} — ${r.error || ''}`).join('\n') || 'No candidates probed';
+                refreshAdminStatus();
+            } catch (e) { out.textContent = `Error: ${e.message}`; }
+        }
+        async function adminForceSync() {
+            const out = document.getElementById('adminSyncOut');
+            out.textContent = 'Syncing catalog (sweeps every provider)...';
+            try {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': getCredentials().adminSecret }, body: '{}' });
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                out.textContent = JSON.stringify(data, null, 2);
+                refreshAdminStatus();
+            } catch (e) { out.textContent = `Error: ${e.message}`; }
+        }
+
+        // Tab-entry hooks for the new views (the base switchTab stays generic)
+        const _origSwitchTab = switchTab;
+        switchTab = function(tabId) {
+            _origSwitchTab(tabId);
+            if (tabId === 'plugins') renderPlugins();
+            if (tabId === 'admin') refreshAdminGate();
+        };
     </script>
 </body>
 </html>

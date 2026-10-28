@@ -106,3 +106,26 @@ recovered; smart/auto/reasoning still 502). The clamp now also applies at
 rank time in getRankedCandidates: any tuple with success_count == 0 is
 scored with iq_verified capped at 0.55 on every request, regardless of the
 stored value or sync state.
+
+## Addendum 4 — 2026-10-27 (rolling hedged race + dashboard overhaul)
+Server: the wave race (3 candidates per wave behind 0/250/1300-3000 ms
+staggers and a wave barrier) is replaced by a rolling hedged race: first
+candidate starts immediately, hedges join at +150/+400 ms, and EVERY
+failure instantly launches the next candidate (up to 12 attempts, max 5
+in flight) -- a fast 4XX no longer leaves the next attempt unstarted for
+~1 s. Catalog sync no longer blocks the request path: with a warm cache
+a due sync refreshes in the background (cold start / admin force still
+await). Local proof: fast 1.9 s, smart 2.2 s, and an explicit request for
+a dead registry model fell through its broken tuples to a working
+provider in 2.7 s (previously 7-10 s of waves, usually a 502).
+Dashboard: the header and tab nav are merged into one unified top bar
+inside a fixed-height app shell (h-screen flex column) -- the bar never
+scrolls, and the chat composer is pinned: only the message list scrolls.
+Self-hiding panels: the connection bar and the chat Routing Parameters
+panel collapse via toggles (state persists; params auto-hide on small
+screens). New Plugins tab: a real registry (NokeyPlugins.register) with
+four working built-ins (Lane Probe, Catalog Sync, Model Ping, Image
+QuickGen) plus an Install panel that mounts Architect-generated plugin
+code live. New Admin tab: locked until the existing Admin Secret is
+verified against the router with a live probe; then status cards, lane
+rankings, probe runner, and catalog force-sync.
