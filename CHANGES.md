@@ -68,3 +68,15 @@ candidate rejected almost immediately) while this build answers the same
 request locally in ~3s — the deployed code itself is the broken layer.
 Redeploying this build is the fix; if it still 502s after redeploy, check
 the deployment's OPENROUTER_API_KEY next.
+
+## Addendum — 2026-10-27 (status moved to /health)
+2822769 made the router serve this dashboard at GET / itself and moved the
+JSON gateway status to GET /health. Every consumer still parsing / as JSON
+(the dashboard Sync check, the connector status helper) died with an
+"HTML is not valid JSON" parse error.
+- index.html: connection test now probes GET /health; a fetchJson helper in
+  the Architect/media paths and an HTML guard on the chat stream turn the
+  raw parse error into a plain-English message.
+- Connector helper (router.py status): falls back to /health when / does
+  not return JSON, instead of crashing with a decode traceback.
+- main.ts: unchanged by this addendum (the /health route already exists).

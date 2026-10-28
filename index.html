@@ -459,6 +459,25 @@
             };
         }
 
+        // Parse a fetch response as JSON, but if the body is actually an HTML
+        // page (the classic case: the URL points at a host serving the
+        // dashboard instead of the API), say so in plain words instead of
+        // dying with "Unexpected token '<' ... is not valid JSON".
+        async function fetchJson(url, options = {}) {
+            const res = await fetch(url, options);
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                if (text.trimStart().startsWith('<')) {
+                    throw new Error('That URL returned a web page (HTML), not the router API. The dashboard lives at /, but the API status is at /health and the API under /v1 -- check the Router URL.');
+                }
+                throw new Error(`Router returned a non-JSON response (HTTP ${res.status})`);
+            }
+            return { res, data };
+        }
+
         function switchTab(tabId) {
             currentTab = tabId;
             document.querySelectorAll('.tab-view').forEach(v => v.classList.add('hidden'));
@@ -500,17 +519,19 @@
                 const headers = {};
                 if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-                const res = await fetch(`${baseUrl}/`, { headers });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
+                // GET / serves this dashboard page itself now -- the JSON
+                // gateway status moved to GET /health. Probing / here would
+                // parse HTML as JSON and explode.
+                const { res, data } = await fetchJson(`${baseUrl}/health`, { headers });
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
 
                 connIcon.className = 'fa-solid fa-plug text-neon-emerald';
                 showToast(`Connected successfully to ${baseUrl}`);
-                logInspector('GET', `${baseUrl}/`, headers, data, 200);
+                logInspector('GET', `${baseUrl}/health`, headers, data, 200);
             } catch (err) {
                 connIcon.className = 'fa-solid fa-plug text-neon-rose';
                 showToast(`Connection error: ${err.message}`, 'error');
-                logInspector('GET', `${baseUrl}/`, {}, { error: err.message }, 502);
+                logInspector('GET', `${baseUrl}/health`, {}, { error: err.message }, 502);
             }
         }
 
@@ -854,6 +875,9 @@
                     const errJson = await res.json().catch(() => ({}));
                     throw new Error(errJson.error?.message || `HTTP ${res.status}`);
                 }
+                if ((res.headers.get('content-type') || '').includes('text/html')) {
+                    throw new Error('That URL returned a web page (HTML), not the router API. Check the Router URL points at the API deployment.');
+                }
 
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
@@ -966,12 +990,11 @@
             const endpoint = `${baseUrl}/v1/images/generations`;
 
             try {
-                const res = await fetch(endpoint, {
+                const { res, data } = await fetchJson(endpoint, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({ model: 'nokey-image', prompt, size: '1024x1024', n: 1 })
                 });
-                const data = await res.json();
                 logInspector('POST', endpoint, headers, data, res.status);
                 if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
                 const url = data.data?.[0]?.url;
@@ -1017,7 +1040,7 @@
                     ...architectHistory
                 ];
 
-                const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+                const { res, data: json } = await fetchJson(`${baseUrl}/v1/chat/completions`, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({
@@ -1027,8 +1050,7 @@
                     })
                 });
 
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const json = await res.json();
+                if (!res.ok) throw new Error(json.error?.message || `HTTP ${res.status}`);
                 const reply = json.choices?.[0]?.message?.content || "No response generated.";
 
                 contentEl.innerHTML = renderMarkdownWithHighlighting(reply);
