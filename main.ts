@@ -1316,7 +1316,15 @@ async function getRankedCandidates(
     if (requireVision && !r.supports_vision) continue;
 
     const iqPrior = Number(r.iq_prior);
-    const iqVerified = Number(r.iq_verified);
+    // Rank-time trust clamp: a tuple that has never completed a request
+    // does not get to use a trusted iq_verified in THIS ranking, no matter
+    // what is stored. The sync-time clamp (Addendum 2) only rewrites a
+    // record when that provider's discovery sync re-runs -- and sync skips
+    // providers whose discovery fails, which is exactly the population
+    // that needs demoting. Clamping here applies on every request.
+    const iqVerified = r.success_count > 0
+      ? Number(r.iq_verified)
+      : Math.min(Number(r.iq_verified), 0.55);
     const iqEffective = Number((iqPrior * iqVerified).toFixed(3));
     const ewmaTtftMs = Number(r.ewma_ttft_ms);
     const ewmaTps = Math.max(1.0, Number(r.ewma_tps));

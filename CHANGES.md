@@ -97,3 +97,12 @@ served a completion, and every wave burned on them.
   canary still sets 1.0 / 0.55 outright on probe results.
 Verified locally: after a sync, Kilo natives head the smart/code rankings
 and both lanes complete in seconds (previously 502).
+
+## Addendum 3 — 2026-10-27 (rank-time trust clamp)
+Addendum 2's demotion ran during catalog sync, but sync skips providers
+whose model discovery fails -- the exact population that needed demoting --
+so production's IQ lanes stayed clogged after the redeploy (fast and code
+recovered; smart/auto/reasoning still 502). The clamp now also applies at
+rank time in getRankedCandidates: any tuple with success_count == 0 is
+scored with iq_verified capped at 0.55 on every request, regardless of the
+stored value or sync state.
