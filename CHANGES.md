@@ -158,3 +158,26 @@ Three changes so the router expands its choices instead of giving up:
    still throw. (Branch is type-checked and mirrors the existing think-
    block behavior; no live reasoning-only response occurred during
    local testing despite several tiny-token attempts.)
+
+## Addendum 6 — 2026-10-27 (the Architect gets hands: tool-use agent)
+The Vajra Core Architect was a chat box: one lane call, no abilities. It
+is now a real tool-use agent in the page. Protocol: the model replies
+with a fenced ```action {"tool": ...}``` block; the page executes the
+tool, feeds the result back, and loops up to 6 rounds, rendering each
+tool call in the chat. Tools: read_file (the system's real source —
+main.ts, index.html, CHANGES.md, services.json, deno.json — paged 300
+lines per call), router_health, list_models, list_plugins,
+install_plugin (mounts live into the Plugins registry), ping_model,
+run_probe and force_sync (admin). New server endpoint GET /v1/source
+(admin-guarded, strict allowlist, path traversal rejected) serves the
+source files; without the Admin Secret the Architect can still read
+index.html (its own page) and use the non-admin tools, and the tab shows
+whether admin tools are armed. The system prompt grounds it honestly:
+deployments are immutable, plugins are its writable surface, and server
+changes must be handed over as patch text, never faked. Verified three
+ways: the page's own tool code ran in a Node harness against the live
+local server (12/12 checks: parsing, health, source reads, allowlist,
+install/list plugins, ping, unknown-tool handling); a live model
+followed the action format, consumed a real list_models result and
+answered with the true catalog count (277); and it produced a
+well-formed install_plugin action for a clock plugin on request.

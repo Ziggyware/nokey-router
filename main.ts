@@ -1729,6 +1729,28 @@ honoApp.post("/v1/resurrect", async (c) => {
   });
 });
 
+// System source reader: lets the dashboard's Architect agent read the
+// code it operates on. Allowlisted files only, admin-guarded like /v1/probe.
+honoApp.get("/v1/source", async (c) => {
+  const adminSecret = Deno.env.get("ADMIN_SECRET");
+  if (adminSecret) {
+    const provided = c.req.header("x-admin-secret") || "";
+    if (!provided || !timingSafeCompare(provided, adminSecret)) {
+      return c.json({ error: { message: "Forbidden: Invalid x-admin-secret" } }, 403);
+    }
+  }
+  const file = c.req.query("file") || "";
+  const ALLOWED = new Set(["main.ts", "index.html", "CHANGES.md", "services.json", "deno.json"]);
+  if (!ALLOWED.has(file)) {
+    return c.json({ error: { message: "File is not in the readable allowlist" } }, 400);
+  }
+  const content = loadTextFile(file);
+  if (content === null) {
+    return c.json({ error: { message: `File not readable in this deployment: ${file}` } }, 404);
+  }
+  return c.json({ file, bytes: content.length, lines: content.split("\n").length, content });
+});
+
 honoApp.post("/v1/chat/completions", async (c) => {
   try {
     const body = await c.req.json();

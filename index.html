@@ -369,9 +369,16 @@
             <div class="bg-dark-800 border border-dark-600 p-4 border-l-4 border-l-neon-emerald flex items-center justify-between">
                 <div>
                     <h2 class="text-xs font-bold text-neon-emerald uppercase font-mono tracking-wider">Vajra Core Architect (Meta-Coder Assistant)</h2>
-                    <p class="text-[11px] text-gray-400 font-mono">An embedded autonomous AI agent that analyzes this app and can modify, refactor, or generate live updates for you.</p>
+                    <p class="text-[11px] text-gray-400 font-mono">An embedded agent with real tools: it reads the system source, inspects the live catalog, and builds &amp; installs dashboard plugins.</p>
                 </div>
                 <button onclick="resetArchitectChat()" class="text-xs font-mono text-gray-400 hover:text-neon-emerald"><i class="fa-solid fa-rotate mr-1"></i>Clear Meta-Chat</button>
+            </div>
+
+            <div class="bg-dark-800 border border-dark-600 px-4 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-gray-400">
+                <span class="text-neon-emerald uppercase tracking-wider">Tools armed:</span>
+                <span>read_file</span><span>router_health</span><span>list_models</span><span>list_plugins</span><span>install_plugin</span><span>ping_model</span>
+                <span class="text-dark-500">|</span>
+                <span id="archAdminTools" class="text-gray-500">admin tools (server source / probe / sync): locked — add the Admin Secret</span>
             </div>
 
             <div class="bg-dark-800 border border-dark-600 flex-1 flex flex-col overflow-hidden">
@@ -380,13 +387,13 @@
                         <div class="w-7 h-7 bg-dark-900 border border-neon-emerald flex items-center justify-center text-neon-emerald shrink-0 font-mono text-xs">MA</div>
                         <div class="space-y-1 text-gray-200">
                             <p class="font-mono text-xs text-neon-emerald font-bold tracking-wider">[ARCHITECT ONLINE] - META-CODING AGENT</p>
-                            <p class="text-xs text-gray-300">I am the embedded meta-agent. Tell me what features, styling tweaks, or API enhancements you'd like added to this dashboard, and I will generate the exact code or patches.</p>
+                            <p class="text-xs text-gray-300">I am the embedded meta-agent, and I have hands now: I can read the router and dashboard source, check live health and models, probe lanes, and create plugins that install live. Tell me what to build or investigate.</p>
                         </div>
                     </div>
                 </div>
                 <div class="p-3 bg-dark-900 border-t border-dark-600">
                     <form onsubmit="submitArchitectMessage(event)" class="flex gap-2">
-                        <input type="text" id="architectInput" placeholder="Ask Vajra Architect to refactor or modify code..." class="flex-1 bg-dark-800 border border-dark-600 p-3 text-xs text-gray-100 font-sans focus:outline-none focus:border-neon-emerald">
+                        <input type="text" id="architectInput" placeholder="Tell the Architect what to build, inspect, or fix..." class="flex-1 bg-dark-800 border border-dark-600 p-3 text-xs text-gray-100 font-sans focus:outline-none focus:border-neon-emerald">
                         <button type="submit" class="bg-dark-700 hover:bg-dark-600 text-neon-emerald border border-neon-emerald px-5 py-3 text-xs font-mono font-bold tracking-widest uppercase">
                             Dispatch
                         </button>
@@ -1124,6 +1131,158 @@
             }
         }
 
+        // ================= Architect agent (tool-use loop) =================
+        // The Architect acts through tools. To call one it replies with a
+        // fenced block: ```action {"tool": "...", ...}``` — the page
+        // executes the tool, feeds the result back, and loops (max 6).
+        const ARCHITECT_SYSTEM_PROMPT = [
+            'You are the Vajra Core Architect, the embedded agent of the Nokey Router dashboard. You do not just chat — you act through tools.',
+            '',
+            'TO CALL A TOOL, reply with a fenced block exactly like this (one action per reply):',
+            '```action',
+            '{"tool": "read_file", "file": "main.ts", "start_line": 1, "end_line": 200}',
+            '```',
+            'After your action you receive a message starting with "[Tool result:" — then either call another tool or give your final answer. A reply with NO action block ends the turn.',
+            '',
+            'TOOLS:',
+            '- read_file {file, start_line?, end_line?} — read the real source of this system. Files: main.ts (router server), index.html (this dashboard), CHANGES.md, services.json, deno.json. Max 300 lines per call; page through large files with start_line/end_line. Server files need the Admin Secret; if a result says it is missing, tell the user plainly.',
+            '- router_health {} — engine status, catalog size, top-ranked tuples per lane.',
+            '- list_models {filter?} — model ids currently in the catalog.',
+            '- list_plugins {} — plugins currently installed in the dashboard.',
+            '- install_plugin {code} — installs a dashboard plugin LIVE. code must call NokeyPlugins.register({ id, name, icon, description, admin?, mount(el, ctx) }). ctx gives plugins: base(), apiKey(), adminSecret(), fetchJson(url, opts) -> {res, data}, toast(msg, type?), log(msg), esc(s). Style plugins with the dashboard palette (bg-dark-800, border-dark-600, text-neon-cyan / neon-emerald / neon-amber / neon-purple, font-mono). After installing, verify with list_plugins.',
+            '- ping_model {model} — one minimal completion to a model id or free:lane; returns latency and the serving provider.',
+            '- run_probe {mode} — admin. Canary-probes the top candidates of a lane (the server currently probes the smart lane).',
+            '- force_sync {} — admin. Forces a full catalog sync.',
+            '',
+            'GROUND RULES:',
+            '- You cannot edit main.ts or any server file at runtime; deployments are immutable. Your writable surface is the plugin system. If a request needs a server change, read the code, explain the exact change, and hand over the precise patch text — never pretend you applied it.',
+            '- Read before you claim: use read_file / router_health / list_models instead of guessing how the system works.',
+            '- Plugin code: compact but complete, ids lowercase-with-dashes, and never emit a closing script tag inside plugin code strings.',
+            '- When asked for a feature, build it as a plugin, install it, and report what it does and where it lives (the Plugins tab).'
+        ].join('\n');
+
+        function parseArchitectAction(text) {
+            const m = String(text).match(/```action\s*\n([\s\S]*?)```/);
+            if (!m) return null;
+            try {
+                const obj = JSON.parse(m[1].trim());
+                return obj && typeof obj.tool === 'string' ? obj : null;
+            } catch (e) { return null; }
+        }
+
+        function architectAdminHeaders() {
+            const { apiKey, adminSecret } = getCredentials();
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+            if (adminSecret) headers['x-admin-secret'] = adminSecret;
+            return headers;
+        }
+
+        function refreshArchitectArming() {
+            const el = document.getElementById('archAdminTools');
+            if (!el) return;
+            if (getCredentials().adminSecret) {
+                el.innerText = 'admin tools (server source / probe / sync): ARMED';
+                el.className = 'text-neon-purple';
+            } else {
+                el.innerText = 'admin tools (server source / probe / sync): locked — add the Admin Secret';
+                el.className = 'text-gray-500';
+            }
+        }
+
+        async function architectToolReadFile(a) {
+            const file = String(a.file || '');
+            const allowed = ['main.ts', 'index.html', 'CHANGES.md', 'services.json', 'deno.json'];
+            if (!allowed.includes(file)) return { ok: false, detail: `read_file: "${file}" is not readable. Allowed: ${allowed.join(', ')}` };
+            const { baseUrl, adminSecret } = getCredentials();
+            let content = null;
+            if (adminSecret) {
+                try {
+                    const { res, data } = await fetchJson(`${baseUrl}/v1/source?file=${encodeURIComponent(file)}`, { headers: architectAdminHeaders() });
+                    if (res.ok) content = data.content;
+                    else if (file !== 'index.html') return { ok: false, detail: `read_file: router refused (${res.status}): ${data.error?.message || 'unknown error'}` };
+                } catch (e) {
+                    if (file !== 'index.html') return { ok: false, detail: `read_file failed: ${e.message}` };
+                }
+            }
+            if (content === null) {
+                if (file !== 'index.html') return { ok: false, detail: 'read_file: reading server files needs the Admin Secret in the connection bar (the router guards /v1/source with it), and none is set. Tell the user to add it.' };
+                const resp = await fetch(window.location.href);
+                content = await resp.text();
+            }
+            const lines = content.split('\n');
+            const start = Math.max(1, parseInt(a.start_line) || 1);
+            let end = parseInt(a.end_line) || start + 299;
+            end = Math.min(end, start + 299, lines.length);
+            if (end < start) end = start;
+            const slice = lines.slice(start - 1, end).map((l, i) => `${start + i}: ${l}`).join('\n');
+            return { ok: true, detail: `${file} — ${lines.length} lines total; showing ${start}-${end}:\n${slice.slice(0, 14000)}` };
+        }
+
+        async function runArchitectTool(action) {
+            const { baseUrl, adminSecret } = getCredentials();
+            try {
+                switch (action.tool) {
+                    case 'read_file': return await architectToolReadFile(action);
+                    case 'router_health': {
+                        const { data } = await fetchJson(`${baseUrl}/health`);
+                        const lanes = ['fast', 'smart', 'code', 'reasoning'].map(l => `${l}: ${(data[`current_best_${l}`] || []).slice(0, 3).map(x => x.tupleId).join(' | ') || 'none'}`).join('\n');
+                        return { ok: true, detail: `status: ${data.status || 'ok'}\nengine: ${data.engine}\ncatalog entries: ${data.security?.l1_cache_entries}\nadmin guard: ${data.security?.admin_guard_enabled}\nTop ranked:\n${lanes}` };
+                    }
+                    case 'list_models': {
+                        const { res, data } = await fetchJson(`${baseUrl}/v1/models`, { headers: architectAdminHeaders() });
+                        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                        let ids = (data.data || []).map(m => m.id);
+                        const total = ids.length;
+                        if (action.filter) ids = ids.filter(id => id.toLowerCase().includes(String(action.filter).toLowerCase()));
+                        return { ok: true, detail: `${total} models in catalog${action.filter ? `, ${ids.length} match "${action.filter}"` : ''}. First ${Math.min(80, ids.length)}:\n${ids.slice(0, 80).join('\n')}` };
+                    }
+                    case 'list_plugins': {
+                        const list = window.NokeyPlugins._list.map(p => `- ${p.id} "${p.name}"${p.admin ? ' [admin]' : ''}: ${p.description || ''}`).join('\n');
+                        return { ok: true, detail: list || 'No plugins installed.' };
+                    }
+                    case 'install_plugin': {
+                        const code = String(action.code || '');
+                        if (!code.includes('NokeyPlugins.register')) return { ok: false, detail: 'install_plugin: code must call NokeyPlugins.register({...}). Nothing was installed.' };
+                        const before = new Set(window.NokeyPlugins._list.map(p => p.id));
+                        new Function('NokeyPlugins', 'ctx', code)(window.NokeyPlugins, pluginCtx);
+                        const added = window.NokeyPlugins._list.filter(p => !before.has(p.id));
+                        if (added.length === 0) return { ok: false, detail: 'install_plugin: code ran but registered no NEW plugin id (an existing plugin may have been replaced in place).' };
+                        return { ok: true, detail: `Plugin installed and live: ${added.map(p => `${p.id} "${p.name}"`).join(', ')}. It now appears in the Plugins tab.` };
+                    }
+                    case 'ping_model': {
+                        const model = String(action.model || 'free:smart');
+                        const t0 = performance.now();
+                        const { res, data } = await fetchJson(`${baseUrl}/v1/chat/completions`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with exactly: pong' }], max_tokens: 32 }) });
+                        const ms = Math.round(performance.now() - t0);
+                        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                        return { ok: true, detail: `${model} answered in ${ms} ms via ${data.provider || '?'} / ${data.model || model}: "${(data.choices?.[0]?.message?.content || '').slice(0, 100)}"` };
+                    }
+                    case 'run_probe': {
+                        if (!adminSecret) return { ok: false, detail: 'run_probe needs the Admin Secret in the connection bar.' };
+                        const { res, data } = await fetchJson(`${baseUrl}/v1/probe`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ mode: action.mode || 'smart' }) });
+                        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                        const lines = (data.results || []).map(r => {
+                            const v = r && r.value ? r.value : null;
+                            if (!v) return 'SKIP (probe entry failed)';
+                            return v.passed ? `PASS ${v.tupleId} (${v.ttftMs} ms)` : `FAIL ${v.tupleId}`;
+                        }).join('\n');
+                        return { ok: true, detail: `Probe results:\n${lines || 'no results'}` };
+                    }
+                    case 'force_sync': {
+                        if (!adminSecret) return { ok: false, detail: 'force_sync needs the Admin Secret in the connection bar.' };
+                        const { res, data } = await fetchJson(`${baseUrl}/v1/sync`, { method: 'POST', headers: architectAdminHeaders(), body: '{}' });
+                        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                        return { ok: true, detail: `Catalog synced: ${data.total_models} models.` };
+                    }
+                    default:
+                        return { ok: false, detail: `Unknown tool "${action.tool}". Valid tools: read_file, router_health, list_models, list_plugins, install_plugin, ping_model, run_probe, force_sync.` };
+                }
+            } catch (e) {
+                return { ok: false, detail: `${action.tool} failed: ${e.message}` };
+            }
+        }
+
         async function submitArchitectMessage(e) {
             e.preventDefault();
             const input = document.getElementById('architectInput');
@@ -1135,36 +1294,48 @@
             input.value = '';
 
             const bubbleId = 'arch-' + Math.random().toString(36).substring(2);
-            appendArchitectMessageToUI('assistant', 'Analyzing app architecture & generating modification...', bubbleId);
+            appendArchitectMessageToUI('assistant', 'Architect is working...', bubbleId);
             const contentEl = document.getElementById(`${bubbleId}-content`);
+            const logLines = [];
+            const renderStatus = (finalHtml) => {
+                const log = logLines.length ? `<div class="font-mono text-[11px] space-y-1 mb-2">${logLines.join('')}</div>` : '';
+                contentEl.innerHTML = finalHtml ? log + finalHtml : log + '<span class="text-gray-400 font-mono text-xs">Architect is working...</span>';
+                const container = document.getElementById('architectMessages');
+                container.scrollTop = container.scrollHeight;
+            };
 
             try {
-                const { baseUrl, apiKey } = getCredentials();
-                const headers = { "Content-Type": "application/json" };
-                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+                const { baseUrl } = getCredentials();
+                let finalText = '';
+                for (let round = 1; round <= 6; round++) {
+                    const { res, data: json } = await fetchJson(`${baseUrl}/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: architectAdminHeaders(),
+                        body: JSON.stringify({
+                            model: "free:smart",
+                            messages: [{ role: "system", content: ARCHITECT_SYSTEM_PROMPT }, ...architectHistory],
+                            temperature: 0.2
+                        })
+                    });
+                    if (!res.ok) throw new Error(json.error?.message || `HTTP ${res.status}`);
+                    const reply = json.choices?.[0]?.message?.content || '';
+                    const action = parseArchitectAction(reply);
+                    architectHistory.push({ role: "assistant", content: reply });
+                    if (!action) { finalText = reply; break; }
 
-                const systemContext = "You are Vajra Core Architect, an expert meta-coder assistant embedded inside this single-file HTML dashboard for nokey-router. The user wants you to help refactor, modify, or extend this application code. Provide clear instructions and code patches.";
-                
-                const messages = [
-                    { role: "system", content: systemContext },
-                    ...architectHistory
-                ];
+                    const fenceAt = reply.indexOf('```action');
+                    const prose = fenceAt > 0 ? reply.slice(0, fenceAt).trim() : '';
+                    if (prose) logLines.push(`<div class="text-gray-300">${escapeHtml(prose.slice(0, 300))}</div>`);
+                    logLines.push(`<div><span class="text-neon-cyan">&#9881; ${escapeHtml(action.tool)}</span> <span class="text-gray-500">running...</span></div>`);
+                    renderStatus('');
 
-                const { res, data: json } = await fetchJson(`${baseUrl}/v1/chat/completions`, {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
-                        model: "free:smart",
-                        messages,
-                        temperature: 0.2
-                    })
-                });
-
-                if (!res.ok) throw new Error(json.error?.message || `HTTP ${res.status}`);
-                const reply = json.choices?.[0]?.message?.content || "No response generated.";
-
-                contentEl.innerHTML = renderMarkdownWithHighlighting(reply);
-                architectHistory.push({ role: "assistant", content: reply });
+                    const result = await runArchitectTool(action);
+                    logLines[logLines.length - 1] = `<div><span class="text-neon-cyan">&#9881; ${escapeHtml(action.tool)}</span> <span class="${result.ok ? 'text-neon-emerald' : 'text-neon-rose'}">${result.ok ? 'done' : 'failed'}</span> <span class="text-gray-500">${escapeHtml(result.detail.split('\n')[0].slice(0, 120))}</span></div>`;
+                    renderStatus('');
+                    architectHistory.push({ role: "user", content: `[Tool result: ${action.tool}]${result.ok ? '' : ' (FAILED)'} ${result.detail}` });
+                    if (round === 6) finalText = 'I used all 6 tool rounds on that. Ask me to continue or summarize and I will pick it back up.';
+                }
+                renderStatus(renderMarkdownWithHighlighting(finalText || 'No response generated.'));
             } catch (err) {
                 contentEl.innerHTML = `<span class="text-neon-rose">Architect error: ${escapeHtml(err.message)}</span>`;
             }
@@ -1193,7 +1364,7 @@
                     <div class="w-7 h-7 bg-dark-900 border border-neon-emerald flex items-center justify-center text-neon-emerald shrink-0 font-mono text-xs">MA</div>
                     <div class="space-y-1 text-gray-200">
                         <p class="font-mono text-xs text-neon-emerald font-bold tracking-wider">[RESET] - META-AGENT READY</p>
-                        <p class="text-xs text-gray-300">Meta-chat reset. What would you like to modify in this program?</p>
+                        <p class="text-xs text-gray-300">Meta-chat reset. What should I build, inspect, or fix?</p>
                     </div>
                 </div>
             `;
@@ -1489,6 +1660,7 @@
             _origSwitchTab(tabId);
             if (tabId === 'plugins') renderPlugins();
             if (tabId === 'admin') refreshAdminGate();
+            if (tabId === 'architect') refreshArchitectArming();
         };
     </script>
 </body>
