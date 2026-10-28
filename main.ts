@@ -1519,6 +1519,7 @@ async function runCanaryProbeOnTopCandidates(limit: number = 4) {
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Probe failed";
         await recordTupleFailure(cand.tupleId, msg);
+        if (e && typeof e === "object") (e as { tupleId?: string }).tupleId = cand.tupleId;
         throw e;
       } finally {
         clearTimeout(timer);
@@ -1689,7 +1690,19 @@ honoApp.post("/v1/probe", async (c) => {
     }
   }
   const probeResults = await runCanaryProbeOnTopCandidates(4);
-  return c.json({ status: "probe_complete", results: probeResults });
+  const results = probeResults
+    .map((r) => {
+      if (r.status === "fulfilled" && r.value) {
+        return { tupleId: r.value.tupleId, ok: true, passed: r.value.passed, ms: r.value.ttftMs };
+      }
+      if (r.status === "rejected") {
+        const reason = r.reason as { tupleId?: string; message?: string } | undefined;
+        return { tupleId: reason?.tupleId ?? "unknown", ok: false, error: reason?.message ?? "probe failed" };
+      }
+      return null;
+    })
+    .filter((x) => x !== null);
+  return c.json({ status: "probe_complete", results });
 });
 
 honoApp.post("/v1/sync", async (c) => {

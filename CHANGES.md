@@ -181,3 +181,31 @@ install/list plugins, ping, unknown-tool handling); a live model
 followed the action format, consumed a real list_models result and
 answered with the true catalog count (277); and it produced a
 well-formed install_plugin action for a clock plugin on request.
+
+## Addendum 7 — 2026-10-27 (Architect v2: byte budgets, code navigation, plugin SDK v2)
+Fixes from live use. (1) /v1/probe returned raw Promise.allSettled
+entries while every consumer (Admin tab, Lane Probe plugin, Architect)
+expected {tupleId, ok, passed, ms} — probes misreported as failures.
+The endpoint now normalizes results and probe failures carry their
+tupleId; all three consumers render PASS / ANSWERED (wrong canary
+answer) / FAIL distinctly. (2) read_file was line-capped (300 lines,
+14k chars). Reads are now BYTE-budgeted: default 120,000 chars per call
+(up to 200,000), whole lines from start_line, with the next start_line
+reported — the whole 83 KB / 2,216-line main.ts returns in ONE call.
+Source fetches are cached per session. (3) Two navigation tools join
+read_file: search_code (regex over a file, line-numbered matches) and
+file_map (structural outline — top-level functions/consts, routes,
+crons, sections, headings; local-variable noise filtered after testing
+showed it drowning the map). (4) The action parser now accepts ```json
+fences, bare JSON objects, and trailing commas, and if a reply looks
+like an action but does not parse, the loop feeds back a correction and
+lets the model resend instead of ending the turn; rounds raised 6 -> 8.
+(5) Plugin SDK v2: ctx gains chat, chatStream (SSE), image, models,
+health, probe, sync, resurrect, source, and storeFor (persistent
+per-plugin storage). Model Ping and Image QuickGen were rebuilt on it,
+and a new built-in, Prompt Lab, is a streaming chat app with a model
+picker and persisted history that exists purely on SDK calls.
+Verified: harness v2 against the live local server — parser variants
+4/4, byte-budgeted whole-file read, search, file map, ctx.chat /
+ctx.models / ctx.storeFor / ctx.probe all passing; a live model asked
+to locate the resurrection probe chose file_map unprompted.

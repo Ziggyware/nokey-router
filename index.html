@@ -429,7 +429,7 @@
             </div>
 
             <div id="pluginInstallPanel" class="hidden bg-dark-800 border border-dark-600 p-4 space-y-3">
-                <label class="block text-[11px] font-mono text-gray-400">Plugin code — receives <span class="text-neon-cyan">NokeyPlugins</span> and <span class="text-neon-cyan">ctx</span> (ctx.base(), ctx.apiKey(), ctx.adminSecret(), ctx.fetchJson, ctx.toast, ctx.log, ctx.esc)</label>
+                <label class="block text-[11px] font-mono text-gray-400">Plugin code — receives <span class="text-neon-cyan">NokeyPlugins</span> and <span class="text-neon-cyan">ctx</span> (ctx.base(), ctx.apiKey(), ctx.adminSecret(), ctx.fetchJson, ctx.toast, ctx.log, ctx.esc, ctx.chat, ctx.chatStream, ctx.image, ctx.models, ctx.health, ctx.probe, ctx.sync, ctx.resurrect, ctx.source, ctx.storeFor)</label>
                 <textarea id="pluginCode" rows="7" spellcheck="false" class="w-full bg-dark-900 border border-dark-600 p-3 text-xs text-gray-100 font-mono focus:outline-none focus:border-neon-cyan resize-y">NokeyPlugins.register({
   id: 'hello-mesh',
   name: 'Hello Mesh',
@@ -1145,11 +1145,13 @@
             'After your action you receive a message starting with "[Tool result:" — then either call another tool or give your final answer. A reply with NO action block ends the turn.',
             '',
             'TOOLS:',
-            '- read_file {file, start_line?, end_line?} — read the real source of this system. Files: main.ts (router server), index.html (this dashboard), CHANGES.md, services.json, deno.json. Max 300 lines per call; page through large files with start_line/end_line. Server files need the Admin Secret; if a result says it is missing, tell the user plainly.',
+            '- read_file {file, start_line?, byte_budget?} — read the real source of this system. Files: main.ts (router server), index.html (this dashboard), CHANGES.md, services.json, deno.json. Reads are BYTE-budgeted (default 120000 chars per call, up to 200000): from start_line it returns as many whole lines as fit the budget and tells you the next start_line. Server files need the Admin Secret; if a result says it is missing, tell the user plainly.',
+            '- search_code {file, query} — regex search (case-insensitive) over a file; returns matching line numbers and text. Use it to locate definitions instead of paging blindly.',
+            '- file_map {file} — structural outline of a file: functions, routes, crons, sections, headings with line numbers. Read this FIRST for large files, then read_file the ranges that matter.',
             '- router_health {} — engine status, catalog size, top-ranked tuples per lane.',
             '- list_models {filter?} — model ids currently in the catalog.',
             '- list_plugins {} — plugins currently installed in the dashboard.',
-            '- install_plugin {code} — installs a dashboard plugin LIVE. code must call NokeyPlugins.register({ id, name, icon, description, admin?, mount(el, ctx) }). ctx gives plugins: base(), apiKey(), adminSecret(), fetchJson(url, opts) -> {res, data}, toast(msg, type?), log(msg), esc(s). Style plugins with the dashboard palette (bg-dark-800, border-dark-600, text-neon-cyan / neon-emerald / neon-amber / neon-purple, font-mono). After installing, verify with list_plugins.',
+            '- install_plugin {code} — installs a dashboard plugin LIVE. code must call NokeyPlugins.register({ id, name, icon, description, admin?, mount(el, ctx) }). ctx is a full SDK: base(), apiKey(), adminSecret(), fetchJson(url, opts) -> {res, data}, toast(msg, type?), log(msg), esc(s), AND async power tools: chat(messages, opts) -> completion JSON, chatStream(messages, onDelta, opts) -> streamed text, image(prompt, model?) -> image URL, models() -> catalog array, health(), probe(mode), sync(), resurrect(limit), source(file) -> full file text, storeFor(pluginId) -> persistent per-plugin storage {get, set, del}. Build real AI apps as plugins with these. Style plugins with the dashboard palette (bg-dark-800, border-dark-600, text-neon-cyan / neon-emerald / neon-amber / neon-purple, font-mono). After installing, verify with list_plugins.',
             '- ping_model {model} — one minimal completion to a model id or free:lane; returns latency and the serving provider.',
             '- run_probe {mode} — admin. Canary-probes the top candidates of a lane (the server currently probes the smart lane).',
             '- force_sync {} — admin. Forces a full catalog sync.',
@@ -1157,17 +1159,46 @@
             'GROUND RULES:',
             '- You cannot edit main.ts or any server file at runtime; deployments are immutable. Your writable surface is the plugin system. If a request needs a server change, read the code, explain the exact change, and hand over the precise patch text — never pretend you applied it.',
             '- Read before you claim: use read_file / router_health / list_models instead of guessing how the system works.',
+            '- Navigate large files by structure, not by paging: file_map for the outline, search_code to find a symbol, then read_file on the exact range.',
             '- Plugin code: compact but complete, ids lowercase-with-dashes, and never emit a closing script tag inside plugin code strings.',
             '- When asked for a feature, build it as a plugin, install it, and report what it does and where it lives (the Plugins tab).'
         ].join('\n');
 
         function parseArchitectAction(text) {
-            const m = String(text).match(/```action\s*\n([\s\S]*?)```/);
-            if (!m) return null;
-            try {
-                const obj = JSON.parse(m[1].trim());
-                return obj && typeof obj.tool === 'string' ? obj : null;
-            } catch (e) { return null; }
+            const s = String(text);
+            const tryParse = (raw) => {
+                try { const o = JSON.parse(raw); if (o && typeof o.tool === 'string') return o; } catch (e) {}
+                try { const o = JSON.parse(raw.replace(/,\s*([}\]])/g, '$1')); if (o && typeof o.tool === 'string') return o; } catch (e) {}
+                return null;
+            };
+            // 1) any fenced block (```action, ```json, or bare ```)
+            const fenceRe = /```(?:action|json)?\s*\n?([\s\S]*?)```/g;
+            let m;
+            while ((m = fenceRe.exec(s)) !== null) {
+                const o = tryParse(m[1].trim());
+                if (o) return o;
+            }
+            // 2) bare balanced-brace JSON object containing "tool"
+            const startAt = s.indexOf('{');
+            if (startAt >= 0) {
+                let depth = 0, inStr = false, esc = false;
+                for (let i = startAt; i < s.length; i++) {
+                    const ch = s[i];
+                    if (inStr) {
+                        if (esc) esc = false;
+                        else if (ch.charCodeAt(0) === 92) esc = true;
+                        else if (ch === '"') inStr = false;
+                        continue;
+                    }
+                    if (ch === '"') inStr = true;
+                    else if (ch === '{') depth++;
+                    else if (ch === '}') {
+                        depth--;
+                        if (depth === 0) { const o = tryParse(s.slice(startAt, i + 1)); if (o) return o; break; }
+                    }
+                }
+            }
+            return null;
         }
 
         function architectAdminHeaders() {
@@ -1190,33 +1221,98 @@
             }
         }
 
-        async function architectToolReadFile(a) {
-            const file = String(a.file || '');
-            const allowed = ['main.ts', 'index.html', 'CHANGES.md', 'services.json', 'deno.json'];
-            if (!allowed.includes(file)) return { ok: false, detail: `read_file: "${file}" is not readable. Allowed: ${allowed.join(', ')}` };
+        const ARCHITECT_FILES = ['main.ts', 'index.html', 'CHANGES.md', 'services.json', 'deno.json'];
+        const architectSourceCache = new Map();
+        function architectCheckFile(tool, file) {
+            return ARCHITECT_FILES.includes(file) ? null : `${tool}: "${file}" is not readable. Allowed: ${ARCHITECT_FILES.join(', ')}`;
+        }
+        async function fetchArchitectSource(file) {
+            if (architectSourceCache.has(file)) return architectSourceCache.get(file);
             const { baseUrl, adminSecret } = getCredentials();
             let content = null;
             if (adminSecret) {
-                try {
-                    const { res, data } = await fetchJson(`${baseUrl}/v1/source?file=${encodeURIComponent(file)}`, { headers: architectAdminHeaders() });
-                    if (res.ok) content = data.content;
-                    else if (file !== 'index.html') return { ok: false, detail: `read_file: router refused (${res.status}): ${data.error?.message || 'unknown error'}` };
-                } catch (e) {
-                    if (file !== 'index.html') return { ok: false, detail: `read_file failed: ${e.message}` };
-                }
+                const { res, data } = await fetchJson(`${baseUrl}/v1/source?file=${encodeURIComponent(file)}`, { headers: architectAdminHeaders() });
+                if (res.ok) content = data.content;
+                else if (file !== 'index.html') throw new Error(`router refused (${res.status}): ${data.error?.message || 'unknown error'}`);
             }
             if (content === null) {
-                if (file !== 'index.html') return { ok: false, detail: 'read_file: reading server files needs the Admin Secret in the connection bar (the router guards /v1/source with it), and none is set. Tell the user to add it.' };
+                if (file !== 'index.html') throw new Error('reading server files needs the Admin Secret in the connection bar (the router guards /v1/source with it), and none is set. Tell the user to add it.');
                 const resp = await fetch(window.location.href);
                 content = await resp.text();
             }
+            architectSourceCache.set(file, content);
+            return content;
+        }
+
+        async function architectToolReadFile(a) {
+            const file = String(a.file || '');
+            const bad = architectCheckFile('read_file', file);
+            if (bad) return { ok: false, detail: bad };
+            let content;
+            try { content = await fetchArchitectSource(file); } catch (e) { return { ok: false, detail: `read_file failed: ${e.message}` }; }
             const lines = content.split('\n');
+            const totalChars = content.length;
             const start = Math.max(1, parseInt(a.start_line) || 1);
-            let end = parseInt(a.end_line) || start + 299;
-            end = Math.min(end, start + 299, lines.length);
+            const budget = Math.min(200000, Math.max(4000, parseInt(a.byte_budget) || 120000));
+            let end = start - 1;
+            let used = 0;
+            while (end < lines.length) {
+                const lineLen = lines[end].length + 1;
+                if (end >= start && used + lineLen > budget) break;
+                used += lineLen;
+                end++;
+            }
             if (end < start) end = start;
             const slice = lines.slice(start - 1, end).map((l, i) => `${start + i}: ${l}`).join('\n');
-            return { ok: true, detail: `${file} — ${lines.length} lines total; showing ${start}-${end}:\n${slice.slice(0, 14000)}` };
+            const more = end < lines.length ? ` More below — call read_file with start_line ${end + 1} to continue.` : ' End of file reached.';
+            return { ok: true, detail: `${file} — ${lines.length} lines, ${totalChars} chars total; showing lines ${start}-${end} (~${used} chars of a ${budget}-char budget).${more}\n${slice}` };
+        }
+
+        async function architectToolSearchCode(a) {
+            const file = String(a.file || '');
+            const bad = architectCheckFile('search_code', file);
+            if (bad) return { ok: false, detail: bad };
+            const query = String(a.query || '');
+            if (!query) return { ok: false, detail: 'search_code: query is required.' };
+            let content;
+            try { content = await fetchArchitectSource(file); } catch (e) { return { ok: false, detail: `search_code failed: ${e.message}` }; }
+            let regex = null;
+            try { regex = new RegExp(query, 'i'); } catch (e) { regex = null; }
+            const needle = query.toLowerCase();
+            const lines = content.split('\n');
+            const hits = [];
+            let count = 0;
+            lines.forEach((l, i) => {
+                const hit = regex ? regex.test(l) : l.toLowerCase().includes(needle);
+                if (hit) {
+                    count++;
+                    if (hits.length < 40) hits.push(`L${i + 1}: ${l.trim().slice(0, 200)}`);
+                }
+            });
+            return { ok: true, detail: `${file}: ${count} line(s) match "${query}"${count > hits.length ? ` (showing first ${hits.length} — narrow the query for more)` : ''}:\n${hits.join('\n') || '(no matches)'}` };
+        }
+
+        async function architectToolFileMap(a) {
+            const file = String(a.file || '');
+            const bad = architectCheckFile('file_map', file);
+            if (bad) return { ok: false, detail: bad };
+            let content;
+            try { content = await fetchArchitectSource(file); } catch (e) { return { ok: false, detail: `file_map failed: ${e.message}` }; }
+            const lines = content.split('\n');
+            const entries = [];
+            const push = (line, label) => { if (entries.length < 250) entries.push(`L${line}: ${label}`); };
+            lines.forEach((l, i) => {
+                const n = i + 1;
+                let m;
+                if ((m = l.match(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_]+)/))) push(n, `function ${m[1]}`);
+                else if ((m = l.match(/honoApp\.(get|post|use)\(\s*"([^"]+)"/))) push(n, `route ${m[1].toUpperCase()} ${m[2]}`);
+                else if ((m = l.match(/Deno\.cron\(\s*"([^"]+)"/))) push(n, `cron ${m[1]}`);
+                else if ((m = l.match(/^(?:export\s+)?const\s+([A-Za-z0-9_]+)\s*=/))) push(n, `const ${m[1]}`);
+                else if ((m = l.match(/^class\s+([A-Za-z0-9_]+)/))) push(n, `class ${m[1]}`);
+                else if ((m = l.match(/<section id="(view-[^"]+)"/))) push(n, `section ${m[1]}`);
+                else if ((m = l.match(/^(#{1,3})\s+(.*)/))) push(n, `heading: ${m[2].slice(0, 80)}`);
+            });
+            return { ok: true, detail: `${file} outline — ${lines.length} lines, ${entries.length} landmarks:\n${entries.join('\n') || '(no landmarks found)'}` };
         }
 
         async function runArchitectTool(action) {
@@ -1224,6 +1320,8 @@
             try {
                 switch (action.tool) {
                     case 'read_file': return await architectToolReadFile(action);
+                    case 'search_code': return await architectToolSearchCode(action);
+                    case 'file_map': return await architectToolFileMap(action);
                     case 'router_health': {
                         const { data } = await fetchJson(`${baseUrl}/health`);
                         const lanes = ['fast', 'smart', 'code', 'reasoning'].map(l => `${l}: ${(data[`current_best_${l}`] || []).slice(0, 3).map(x => x.tupleId).join(' | ') || 'none'}`).join('\n');
@@ -1263,9 +1361,8 @@
                         const { res, data } = await fetchJson(`${baseUrl}/v1/probe`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ mode: action.mode || 'smart' }) });
                         if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
                         const lines = (data.results || []).map(r => {
-                            const v = r && r.value ? r.value : null;
-                            if (!v) return 'SKIP (probe entry failed)';
-                            return v.passed ? `PASS ${v.tupleId} (${v.ttftMs} ms)` : `FAIL ${v.tupleId}`;
+                            if (!r.ok) return `FAIL ${r.tupleId} — ${r.error || 'probe failed'}`;
+                            return r.passed ? `PASS ${r.tupleId} (${r.ms} ms)` : `ANSWERED ${r.tupleId} (${r.ms} ms, wrong canary answer)`;
                         }).join('\n');
                         return { ok: true, detail: `Probe results:\n${lines || 'no results'}` };
                     }
@@ -1276,7 +1373,7 @@
                         return { ok: true, detail: `Catalog synced: ${data.total_models} models.` };
                     }
                     default:
-                        return { ok: false, detail: `Unknown tool "${action.tool}". Valid tools: read_file, router_health, list_models, list_plugins, install_plugin, ping_model, run_probe, force_sync.` };
+                        return { ok: false, detail: `Unknown tool "${action.tool}". Valid tools: read_file, search_code, file_map, router_health, list_models, list_plugins, install_plugin, ping_model, run_probe, force_sync.` };
                 }
             } catch (e) {
                 return { ok: false, detail: `${action.tool} failed: ${e.message}` };
@@ -1307,7 +1404,7 @@
             try {
                 const { baseUrl } = getCredentials();
                 let finalText = '';
-                for (let round = 1; round <= 6; round++) {
+                for (let round = 1; round <= 8; round++) {
                     const { res, data: json } = await fetchJson(`${baseUrl}/v1/chat/completions`, {
                         method: 'POST',
                         headers: architectAdminHeaders(),
@@ -1321,7 +1418,17 @@
                     const reply = json.choices?.[0]?.message?.content || '';
                     const action = parseArchitectAction(reply);
                     architectHistory.push({ role: "assistant", content: reply });
-                    if (!action) { finalText = reply; break; }
+                    if (!action) {
+                        const looksLikeAction = reply.includes('```action') || /"tool"\s*:/.test(reply);
+                        if (looksLikeAction && round < 8) {
+                            logLines.push('<div class="text-neon-amber">&#9888; action block could not be parsed — asking the Architect to resend it as valid JSON</div>');
+                            renderStatus('');
+                            architectHistory.push({ role: "user", content: '[Tool result: system] (FAILED) Your last action block could not be parsed as JSON. Resend exactly ONE ```action fenced block containing valid JSON only — no trailing commas, no comments, no prose inside the fence.' });
+                            continue;
+                        }
+                        finalText = reply;
+                        break;
+                    }
 
                     const fenceAt = reply.indexOf('```action');
                     const prose = fenceAt > 0 ? reply.slice(0, fenceAt).trim() : '';
@@ -1333,7 +1440,7 @@
                     logLines[logLines.length - 1] = `<div><span class="text-neon-cyan">&#9881; ${escapeHtml(action.tool)}</span> <span class="${result.ok ? 'text-neon-emerald' : 'text-neon-rose'}">${result.ok ? 'done' : 'failed'}</span> <span class="text-gray-500">${escapeHtml(result.detail.split('\n')[0].slice(0, 120))}</span></div>`;
                     renderStatus('');
                     architectHistory.push({ role: "user", content: `[Tool result: ${action.tool}]${result.ok ? '' : ' (FAILED)'} ${result.detail}` });
-                    if (round === 6) finalText = 'I used all 6 tool rounds on that. Ask me to continue or summarize and I will pick it back up.';
+                    if (round === 8) finalText = 'I used all 8 tool rounds on that. Ask me to continue or summarize and I will pick it back up.';
                 }
                 renderStatus(renderMarkdownWithHighlighting(finalText || 'No response generated.'));
             } catch (err) {
@@ -1403,6 +1510,84 @@
             log: (msg) => { try { logInspector('PLUGIN', 'local', {}, String(msg), 200); } catch (e) {} },
             esc: (s) => escapeHtml(String(s)),
         };
+
+        // ---- Plugin SDK v2: plugins get real power ----
+        // v1 plugins could only render and hand-roll fetch. v2 gives them
+        // the router itself: chat (buffered + streaming), images, catalog,
+        // health, admin ops, source reads, and persistent per-plugin
+        // storage. A plugin can now be a complete AI app.
+        Object.assign(pluginCtx, {
+            chat: async (messages, opts = {}) => {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/chat/completions`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ model: opts.model || 'free:smart', messages, max_tokens: opts.max_tokens ?? 1024, temperature: opts.temperature ?? 0.7, stream: false }) });
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                return data;
+            },
+            chatStream: async (messages, onDelta, opts = {}) => {
+                const resp = await fetch(`${getCredentials().baseUrl}/v1/chat/completions`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ model: opts.model || 'free:smart', messages, max_tokens: opts.max_tokens ?? 1024, temperature: opts.temperature ?? 0.7, stream: true }) });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '', full = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const parts = buffer.split('\n');
+                    buffer = parts.pop() || '';
+                    for (const line of parts) {
+                        const t = line.trim();
+                        if (!t.startsWith('data:')) continue;
+                        const payload = t.slice(5).trim();
+                        if (payload === '[DONE]') continue;
+                        try {
+                            const j = JSON.parse(payload);
+                            const d = j.choices?.[0]?.delta?.content || '';
+                            if (d) { full += d; if (onDelta) onDelta(d, full); }
+                        } catch (e) {}
+                    }
+                }
+                return full;
+            },
+            image: async (prompt, model = 'nokey-image') => {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/images/generations`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ prompt, model, response_format: 'url' }) });
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                const item = (data.data || [])[0] || {};
+                return item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : '');
+            },
+            models: async () => {
+                const { data } = await fetchJson(`${getCredentials().baseUrl}/v1/models`, { headers: architectAdminHeaders() });
+                return data.data || [];
+            },
+            health: async () => {
+                const { data } = await fetchJson(`${getCredentials().baseUrl}/health`);
+                return data;
+            },
+            probe: async (mode = 'smart') => {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/probe`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ mode }) });
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                return data;
+            },
+            sync: async () => {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/sync`, { method: 'POST', headers: architectAdminHeaders(), body: '{}' });
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                return data;
+            },
+            resurrect: async (limit = 6) => {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/resurrect`, { method: 'POST', headers: architectAdminHeaders(), body: JSON.stringify({ limit }) });
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                return data;
+            },
+            source: async (file) => {
+                const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/source?file=${encodeURIComponent(file)}`, { headers: architectAdminHeaders() });
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                return data.content;
+            },
+            storeFor: (pluginId) => ({
+                get: (k, fallback = null) => { try { const v = localStorage.getItem(`plugin:${pluginId}:${k}`); return v === null ? fallback : JSON.parse(v); } catch (e) { return fallback; } },
+                set: (k, v) => { try { localStorage.setItem(`plugin:${pluginId}:${k}`, JSON.stringify(v)); } catch (e) {} },
+                del: (k) => { try { localStorage.removeItem(`plugin:${pluginId}:${k}`); } catch (e) {} },
+            }),
+        });
         let pluginsRendered = false;
         window.NokeyPlugins = {
             _list: [],
@@ -1472,9 +1657,11 @@
                     try {
                         const { res, data } = await ctx.fetchJson(`${ctx.base()}/v1/probe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': ctx.adminSecret() }, body: JSON.stringify({ mode: el.querySelector('.lp-mode').value }) });
                         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-                        out.innerHTML = (data.results || []).map(r => r.ok
-                            ? `<div class="text-neon-emerald">PASS ${ctx.esc(r.tupleId)} <span class="text-gray-500">${r.ms} ms</span></div>`
-                            : `<div class="text-neon-rose">FAIL ${ctx.esc(r.tupleId)} <span class="text-gray-500">${ctx.esc(r.error || '')}</span></div>`).join('') || '<span class="text-gray-500">No candidates</span>';
+                        out.innerHTML = (data.results || []).map(r => {
+                            if (!r.ok) return `<div class="text-neon-rose">FAIL ${ctx.esc(r.tupleId)} <span class="text-gray-500">${ctx.esc(r.error || '')}</span></div>`;
+                            if (r.passed) return `<div class="text-neon-emerald">PASS ${ctx.esc(r.tupleId)} <span class="text-gray-500">${r.ms} ms</span></div>`;
+                            return `<div class="text-neon-amber">ANSWERED ${ctx.esc(r.tupleId)} <span class="text-gray-500">${r.ms} ms, wrong canary answer</span></div>`;
+                        }).join('') || '<span class="text-gray-500">No candidates</span>';
                     } catch (e) { out.innerHTML = `<span class="text-neon-rose">${ctx.esc(e.message)}</span>`; }
                 };
             }
@@ -1525,9 +1712,8 @@
                     out.innerHTML = '<span class="text-gray-500">Pinging...</span>';
                     const t0 = performance.now();
                     try {
-                        const { res, data } = await ctx.fetchJson(`${ctx.base()}/v1/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ctx.apiKey()}` }, body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with exactly: pong' }], max_tokens: 32 }) });
+                        const data = await ctx.chat([{ role: 'user', content: 'Reply with exactly: pong' }], { model, max_tokens: 32 });
                         const ms = Math.round(performance.now() - t0);
-                        if (!res.ok) throw new Error(data.error?.message || data.error || `HTTP ${res.status}`);
                         const content = data.choices?.[0]?.message?.content || '';
                         out.innerHTML = `<div class="text-neon-emerald">${ms} ms — served by ${ctx.esc(data.provider || '?')} / ${ctx.esc(data.model || model)}</div><div class="text-gray-400">${ctx.esc(content.slice(0, 120))}</div>`;
                     } catch (e) { out.innerHTML = `<span class="text-neon-rose">${ctx.esc(e.message)}</span>`; }
@@ -1552,14 +1738,59 @@
                     if (!prompt) return;
                     out.innerHTML = '<span class="text-[11px] font-mono text-gray-500">Generating (can take ~30s)...</span>';
                     try {
-                        const { res, data } = await ctx.fetchJson(`${ctx.base()}/v1/images/generations`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ctx.apiKey()}` }, body: JSON.stringify({ prompt, model: 'nokey-image', response_format: 'url' }) });
-                        if (!res.ok) throw new Error(data.error?.message || data.error || `HTTP ${res.status}`);
-                        const item = (data.data || [])[0] || {};
-                        const src = item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : '');
+                        const src = await ctx.image(prompt, 'nokey-image');
                         if (!src) throw new Error('No image in response');
                         out.innerHTML = `<a href="${ctx.esc(src)}" target="_blank" rel="noopener"><img src="${ctx.esc(src)}" class="w-full border border-dark-600" alt="generated image"></a>`;
                     } catch (e) { out.innerHTML = `<span class="text-[11px] font-mono text-neon-rose">${ctx.esc(e.message)}</span>`; }
                 };
+            }
+        });
+
+        // ---- Built-in plugin: Prompt Lab (SDK v2 showcase) ----
+        NokeyPlugins.register({
+            id: 'prompt-lab', name: 'Prompt Lab', icon: 'fa-solid fa-flask',
+            description: 'A streaming mini-chat built entirely on the plugin SDK (ctx.models, ctx.chatStream, ctx.storeFor). Proof a plugin can be a real AI app.',
+            mount(el, ctx) {
+                const store = ctx.storeFor('prompt-lab');
+                el.innerHTML = `
+                    <div class="flex gap-2 mb-2">
+                        <select class="pl-model flex-1 bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono"></select>
+                        <button class="pl-clear bg-dark-700 hover:bg-dark-600 text-gray-300 border border-dark-500 px-2 py-1 text-[11px] font-mono uppercase transition">Clear</button>
+                    </div>
+                    <div class="pl-out bg-dark-900 border border-dark-600 p-2 h-40 overflow-y-auto text-[11px] font-mono text-gray-300 whitespace-pre-wrap"></div>
+                    <div class="flex gap-2 mt-2">
+                        <input class="pl-input flex-1 bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono" placeholder="Ask anything...">
+                        <button class="pl-send bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase transition">Send</button>
+                    </div>`;
+                const out = el.querySelector('.pl-out');
+                const sel = el.querySelector('.pl-model');
+                const history = store.get('history', []);
+                const render = () => { out.textContent = history.map(m => `${m.role === 'user' ? 'You' : 'AI'}: ${m.content}`).join('\n\n'); out.scrollTop = out.scrollHeight; };
+                render();
+                (async () => {
+                    try {
+                        const models = await ctx.models();
+                        sel.innerHTML = models.slice(0, 200).map(m => `<option value="${ctx.esc(m.id)}">${ctx.esc(m.id)}</option>`).join('');
+                        sel.value = 'free:smart';
+                    } catch (e) { sel.innerHTML = '<option value="free:smart">free:smart</option>'; }
+                })();
+                const send = async () => {
+                    const input = el.querySelector('.pl-input');
+                    const text = input.value.trim();
+                    if (!text) return;
+                    input.value = '';
+                    history.push({ role: 'user', content: text });
+                    const aiMsg = { role: 'assistant', content: '' };
+                    history.push(aiMsg);
+                    render();
+                    try {
+                        await ctx.chatStream(history.slice(0, -1), (d, full) => { aiMsg.content = full; render(); }, { model: sel.value, max_tokens: 1024 });
+                    } catch (e) { aiMsg.content = `Error: ${e.message}`; render(); }
+                    store.set('history', history.slice(-20));
+                };
+                el.querySelector('.pl-send').onclick = send;
+                el.querySelector('.pl-input').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') send(); });
+                el.querySelector('.pl-clear').onclick = () => { history.length = 0; store.set('history', []); render(); };
             }
         });
 
@@ -1627,7 +1858,10 @@
             try {
                 const { res, data } = await fetchJson(`${getCredentials().baseUrl}/v1/probe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': getCredentials().adminSecret }, body: JSON.stringify({ mode: document.getElementById('adminProbeMode').value }) });
                 if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-                out.textContent = (data.results || []).map(r => r.ok ? `PASS ${r.tupleId} (${r.ms} ms)` : `FAIL ${r.tupleId} — ${r.error || ''}`).join('\n') || 'No candidates probed';
+                out.textContent = (data.results || []).map(r => {
+                    if (!r.ok) return `FAIL ${r.tupleId} — ${r.error || ''}`;
+                    return r.passed ? `PASS ${r.tupleId} (${r.ms} ms)` : `ANSWERED ${r.tupleId} (${r.ms} ms, wrong canary answer)`;
+                }).join('\n') || 'No candidates probed';
                 refreshAdminStatus();
             } catch (e) { out.textContent = `Error: ${e.message}`; }
         }
