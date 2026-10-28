@@ -1059,6 +1059,20 @@ export async function findProviderByName(name: string): Promise<ProviderSpec | u
   return resolveProviderByName(name);
 }
 
+// Resolve a candidate's provider by id across BOTH provider universes
+// (native PROVIDERS and the services.json registry). The dispatch race and
+// the canary probe previously searched PROVIDERS only, so any registry
+// candidate that ranked into a wave instantly failed with "Provider missing
+// or unconfigured" -- enough of them near the head of the ranking and every
+// request returned 502 "All promises were rejected" while healthy native
+// providers sat idle.
+async function resolveProviderById(providerId: string): Promise<ProviderSpec | undefined> {
+  const native = PROVIDERS.find((p) => p.id === providerId);
+  if (native) return native;
+  const extra = await serviceJsonProviderList();
+  return extra.find((p) => p.id === providerId);
+}
+
 // Admissibility consolidation. A provider is admissible if it is configured and
 // resolvable through the active provider universe (native + services.json).
 async function isProviderAdmissible(provider: ProviderSpec): Promise<boolean> {
@@ -1226,6 +1240,49 @@ export interface ScoredCandidate {
   smartScore: number;
 }
 
+// ---------------------------------------------------------------------------
+// Provider diversity + circuit breaker.
+// Dispatch races waves of 3 candidates drawn from the head of the ranked
+// list, 9 attempts max. If one provider's tuples fill the head (a big free
+// catalog with optimistic latency priors does exactly this), a provider-level
+// outage -- dead key, exhausted quota -- fails every wave and the request
+// returns 502 even while other providers are healthy. Two guards:
+//  1. interleaveByProvider round-robins the ranked list across providers so
+//     every wave spans multiple providers, preserving per-provider order.
+//  2. PROVIDER_BREAKER excludes a provider from ranking for 5 minutes after
+//     6 consecutive tuple failures, and clears on its next success.
+// ---------------------------------------------------------------------------
+function interleaveByProvider(sorted: ScoredCandidate[]): ScoredCandidate[] {
+  const byProvider = new Map<string, ScoredCandidate[]>();
+  for (const cand of sorted) {
+    const bucket = byProvider.get(cand.providerId);
+    if (bucket) bucket.push(cand);
+    else byProvider.set(cand.providerId, [cand]);
+  }
+  const queues = [...byProvider.values()];
+  const out: ScoredCandidate[] = [];
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const q of queues) {
+      const next = q.shift();
+      if (next) {
+        out.push(next);
+        progressed = true;
+      }
+    }
+  }
+  return out;
+}
+
+const PROVIDER_BREAKER = new Map<string, { fails: number; openUntil: number }>();
+const BREAKER_FAIL_THRESHOLD = 6;
+const BREAKER_OPEN_MS = 300000;
+
+function breakerProviderId(tupleId: string): string {
+  return tupleId.split("::")[0] || "";
+}
+
 async function getRankedCandidates(
   mode: RoutingMode,
   deterministic = false,
@@ -1244,6 +1301,10 @@ async function getRankedCandidates(
     ...PROVIDERS.filter((p) => p.isConfigured()).map((p) => p.id),
     ...serviceJsonProviderList.filter((p) => p.isConfigured()).map((p) => p.id),
   ]);
+
+  for (const [pid, state] of PROVIDER_BREAKER) {
+    if (state.openUntil > now) activeProviderIds.delete(pid);
+  }
 
   const candidates: ScoredCandidate[] = [];
   for (const r of catalog.values()) {
@@ -1297,12 +1358,14 @@ async function getRankedCandidates(
   }
 
   if (mode === "fast") {
-    return candidates
-      .filter((c) => c.iqEffective >= 0.50)
-      .sort((a, b) => a.expectedFastMs - b.expectedFastMs);
+    return interleaveByProvider(
+      candidates
+        .filter((c) => c.iqEffective >= 0.50)
+        .sort((a, b) => a.expectedFastMs - b.expectedFastMs),
+    );
   }
 
-  return candidates.sort((a, b) => b.smartScore - a.smartScore);
+  return interleaveByProvider(candidates.sort((a, b) => b.smartScore - a.smartScore));
 }
 
 // ============================================================================
@@ -1315,6 +1378,7 @@ async function recordTupleSuccess(
   totalMs: number,
   estTokens: number,
 ): Promise<void> {
+  PROVIDER_BREAKER.delete(breakerProviderId(tupleId));
   const streamDurationSec = Math.max(0.05, (totalMs - ttftMs) / 1000);
   const observedTps = Math.min(800, Math.max(2, estTokens / streamDurationSec));
 
@@ -1332,6 +1396,17 @@ async function recordTupleSuccess(
 
 async function recordTupleFailure(tupleId: string, errMsg: string): Promise<void> {
   const now = Date.now();
+  const pid = breakerProviderId(tupleId);
+  if (pid) {
+    const state = PROVIDER_BREAKER.get(pid) || { fails: 0, openUntil: 0 };
+    state.fails += 1;
+    if (state.fails >= BREAKER_FAIL_THRESHOLD) {
+      state.openUntil = now + BREAKER_OPEN_MS;
+      state.fails = 0;
+      console.warn(`provider breaker OPEN for ${pid} (${BREAKER_OPEN_MS / 1000}s)`);
+    }
+    PROVIDER_BREAKER.set(pid, state);
+  }
   const baseSec = errMsg.includes("429")
     ? 120
     : errMsg.includes("401") || errMsg.includes("403")
@@ -1364,7 +1439,7 @@ async function runCanaryProbeOnTopCandidates(limit: number = 4) {
 
   return await Promise.allSettled(
     topSmart.map(async (cand) => {
-      const provider = PROVIDERS.find((p) => p.id === cand.providerId);
+      const provider = await resolveProviderById(cand.providerId);
       if (!provider || !provider.isConfigured()) return null;
 
       const ctrl = new AbortController();
@@ -1474,9 +1549,16 @@ honoApp.get("/v1/models", async (c) => {
     context_window: m.contextWindow,
   }));
 
+  const imageModels = IMAGE_MODELS.map((img) => ({
+    id: img.id,
+    object: "model",
+    created: 1761523200,
+    owned_by: "nokey-image",
+  }));
+
   return c.json({
     object: "list",
-    data: [...virtualAliases, ...discoveredModels],
+    data: [...virtualAliases, ...imageModels, ...discoveredModels],
   });
 });
 
@@ -1591,7 +1673,7 @@ honoApp.post("/v1/chat/completions", async (c) => {
         });
       }
 
-      const provider = PROVIDERS.find((p) => p.id === cand.providerId);
+      const provider = await resolveProviderById(cand.providerId);
       if (!provider || !provider.isConfigured()) throw new Error("Provider missing or unconfigured");
 
       try {
@@ -1730,6 +1812,140 @@ honoApp.post("/v1/chat/completions", async (c) => {
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Empirical mesh dispatch failed";
+    return c.json({ error: { message: msg } }, 502);
+  }
+});
+
+// ============================================================================
+// IMAGE GENERATION -- OpenAI-compatible POST /v1/images/generations
+// Keyless upstreams only: Pollinations image API (primary) and the AI Horde
+// anonymous pool (fallback / explicit). Model ids:
+//   nokey-image       -> Pollinations "turbo" (fast)
+//   nokey-image-flux  -> Pollinations "flux" (higher quality, slower)
+//   nokey-image-horde -> AI Horde stable_diffusion (anonymous key)
+// Response follows the OpenAI shape: { created, data: [{ url } | { b64_json }] }
+// ============================================================================
+
+const IMAGE_MODELS = [
+  { id: "nokey-image", provider: "pollinations", upstreamModel: "turbo" },
+  { id: "nokey-image-flux", provider: "pollinations", upstreamModel: "flux" },
+  { id: "nokey-image-horde", provider: "horde", upstreamModel: "stable_diffusion" },
+];
+
+function parseImageSize(size: unknown): { width: number; height: number } {
+  switch (String(size || "1024x1024")) {
+    case "512x512": return { width: 512, height: 512 };
+    case "1024x1024": return { width: 1024, height: 1024 };
+    case "1024x576": return { width: 1024, height: 576 };
+    case "576x1024": return { width: 576, height: 1024 };
+    case "1792x1024": return { width: 1792, height: 1024 };
+    case "1024x1792": return { width: 1024, height: 1792 };
+    default: return { width: 1024, height: 1024 };
+  }
+}
+
+function bytesToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CHUNK = 32768;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+async function generateViaPollinations(
+  prompt: string,
+  width: number,
+  height: number,
+  upstreamModel: string,
+  seed: number,
+): Promise<string> {
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` +
+    `?width=${width}&height=${height}&seed=${seed}&model=${upstreamModel}&nologo=true`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(90000) });
+  if (!res.ok) throw new Error(`Pollinations image HTTP ${res.status}`);
+  // Drain the body so the generation completes server-side; the returned URL
+  // is seed-stable, so the client fetch renders the same image.
+  await res.arrayBuffer();
+  return url;
+}
+
+async function generateViaHorde(prompt: string, width: number, height: number): Promise<string> {
+  const submit = await fetch("https://stablehorde.net/api/v2/generate/async", {
+    method: "POST",
+    headers: { "content-type": "application/json", apikey: "0000000000" },
+    body: JSON.stringify({
+      prompt,
+      params: { width, height, steps: 20, sampler_name: "k_euler", cfg_scale: 7, n: 1 },
+      models: ["stable_diffusion"],
+      slow_workers: true,
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!submit.ok) throw new Error(`AI Horde submit HTTP ${submit.status}`);
+  const job = await submit.json();
+  const jobId = String(job.id || "");
+  if (!jobId) throw new Error("AI Horde submit returned no job id");
+  const deadline = Date.now() + 150000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 4000));
+    const chkRes = await fetch(`https://stablehorde.net/api/v2/generate/check/${jobId}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    const chk = await chkRes.json();
+    if (chk.faulted) throw new Error("AI Horde job faulted");
+    if (chk.done) {
+      const stRes = await fetch(`https://stablehorde.net/api/v2/generate/status/${jobId}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      const st = await stRes.json();
+      const img = st?.generations?.[0]?.img;
+      if (img) return String(img);
+      throw new Error("AI Horde finished without an image");
+    }
+  }
+  throw new Error("AI Horde generation timed out");
+}
+
+honoApp.post("/v1/images/generations", async (c) => {
+  try {
+    const body = await c.req.json();
+    const prompt = String(body.prompt || "").trim();
+    if (!prompt) {
+      return c.json({ error: { message: "prompt is required" } }, 400);
+    }
+    const spec = IMAGE_MODELS.find((img) => img.id === String(body.model || "nokey-image")) ||
+      IMAGE_MODELS[0];
+    const { width, height } = parseImageSize(body.size);
+    const n = Math.min(4, Math.max(1, Number(body.n || 1)));
+    const wantB64 = String(body.response_format || "url") === "b64_json";
+
+    const data: Array<{ url?: string; b64_json?: string }> = [];
+    for (let i = 0; i < n; i++) {
+      let url: string;
+      if (spec.provider === "horde") {
+        url = await generateViaHorde(prompt, width, height);
+      } else {
+        const seed = Math.floor(Math.random() * 1000000) + i;
+        try {
+          url = await generateViaPollinations(prompt, width, height, spec.upstreamModel, seed);
+        } catch (pollErr) {
+          console.warn(`pollinations image failed (${pollErr instanceof Error ? pollErr.message : pollErr}); falling back to AI Horde`);
+          url = await generateViaHorde(prompt, width, height);
+        }
+      }
+      if (wantB64) {
+        const imgRes = await fetch(url, { signal: AbortSignal.timeout(60000) });
+        if (!imgRes.ok) throw new Error(`Image fetch HTTP ${imgRes.status}`);
+        data.push({ b64_json: bytesToBase64(await imgRes.arrayBuffer()) });
+      } else {
+        data.push({ url });
+      }
+    }
+    return c.json({ created: Math.floor(Date.now() / 1000), data });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Image generation failed";
     return c.json({ error: { message: msg } }, 502);
   }
 });

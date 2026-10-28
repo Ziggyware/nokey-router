@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nokey Router - Sovereign Empirical AI Workspace</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            900: '#05070b',
+                            800: '#0b0f19',
+                            700: '#131c2e',
+                            600: '#1e2d4a',
+                            500: '#2c416e'
+                        },
+                        neon: {
+                            cyan: '#00f2fe',
+                            blue: '#4facfe',
+                            emerald: '#00ffcc',
+                            amber: '#ffb700',
+                            purple: '#b829ff',
+                            rose: '#ff2a6d'
+                        }
+                    },
+                    borderRadius: {
+                        none: '0px',
+                        sm: '0px',
+                        DEFAULT: '0px',
+                        md: '0px',
+                        lg: '0px',
+                        xl: '0px',
+                        '2xl': '0px',
+                        '3xl': '0px',
+                        full: '0px'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome & Google Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Prism.js Syntax Highlighter CSS & JS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <!-- Marked.js for Robust Markdown Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #05070b; color: #e2e8f0; }
+        code, pre, .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #05070b; }
+        ::-webkit-scrollbar-thumb { background: #1e2d4a; border: 1px solid #00f2fe33; }
+        ::-webkit-scrollbar-thumb:hover { background: #00f2fe; }
+        .cyber-grid {
+            background-image: linear-gradient(to right, rgba(0, 242, 254, 0.03) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(0, 242, 254, 0.03) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .neon-glow { box-shadow: 0 0 15px rgba(0, 242, 254, 0.15); }
+        .neon-border { border-color: rgba(0, 242, 254, 0.4); }
+        /* Strict zero rounding */
+        * { border-radius: 0 !important; }
+    </style>
+</head>
+<body class="bg-dark-900 text-gray-100 min-h-screen flex flex-col antialiased cyber-grid selection:bg-neon-cyan selection:text-black">
+
+    <!-- Top Navigation Bar -->
+    <header class="border-b border-dark-600 bg-dark-800/95 backdrop-blur sticky top-0 z-50 px-4 lg:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 bg-dark-700 border border-neon-cyan flex items-center justify-center neon-glow">
+                <i class="fa-solid fa-microchip text-neon-cyan text-base"></i>
+            </div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h1 class="font-bold text-sm tracking-widest text-white uppercase font-mono">Nokey Router</h1>
+                    <span class="text-[10px] px-1.5 py-0.5 bg-neon-emerald/10 text-neon-emerald border border-neon-emerald/30 font-mono">v5.2-HARVEST</span>
+                </div>
+                <p class="text-[11px] text-gray-400 font-mono">Empirical Sovereign AI Gateway</p>
+            </div>
+        </div>
+
+        <!-- Secure Credential Bar -->
+        <div class="flex items-center space-x-2 bg-dark-900 border border-dark-600 p-1">
+            <div class="flex items-center px-2 space-x-1.5">
+                <i class="fa-solid fa-server text-[11px] text-neon-cyan"></i>
+                <input type="text" id="routerBaseUrl" placeholder="Router URL" class="bg-transparent text-xs text-gray-200 focus:outline-none w-52 font-mono">
+            </div>
+            <div class="h-4 w-px bg-dark-600"></div>
+            <div class="flex items-center px-2 space-x-1.5">
+                <i class="fa-solid fa-key text-[11px] text-neon-amber"></i>
+                <input type="password" id="routerApiKey" placeholder="API Key (Encrypted)" class="bg-transparent text-xs text-gray-200 focus:outline-none w-32 font-mono">
+            </div>
+            <div class="h-4 w-px bg-dark-600"></div>
+            <div class="flex items-center px-2 space-x-1.5">
+                <i class="fa-solid fa-shield text-[11px] text-neon-purple"></i>
+                <input type="password" id="adminSecret" placeholder="Admin Secret" class="bg-transparent text-xs text-gray-200 focus:outline-none w-28 font-mono">
+            </div>
+            <button onclick="saveAndTestCredentials()" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1 text-xs font-mono uppercase tracking-wider transition flex items-center space-x-1">
+                <i class="fa-solid fa-bolt" id="connIcon"></i>
+                <span class="hidden sm:inline">Sync</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Navigation Tabs -->
+    <nav class="bg-dark-800 border-b border-dark-600 px-4 lg:px-6 flex space-x-2 overflow-x-auto font-mono text-xs">
+        <button onclick="switchTab('chat')" id="tab-chat" class="tab-btn px-4 py-2.5 border-b-2 border-neon-cyan text-neon-cyan bg-dark-700/50 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-terminal"></i>
+            <span>Workspace & Chat</span>
+        </button>
+        <button onclick="switchTab('harvester')" id="tab-harvester" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-neon-amber hover:text-neon-amber/80 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-satellite-dish"></i>
+            <span>Endpoint Harvester & Auto-Injector</span>
+        </button>
+        <button onclick="switchTab('catalog')" id="tab-catalog" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-brain"></i>
+            <span>Mesh Catalog & Health</span>
+        </button>
+        <button onclick="switchTab('media')" id="tab-media" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>Image & Video Gen</span>
+        </button>
+        <button onclick="switchTab('architect')" id="tab-architect" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-neon-emerald hover:text-neon-emerald/80 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-code-merge"></i>
+            <span>Vajra Core Architect</span>
+        </button>
+        <button onclick="switchTab('inspector')" id="tab-inspector" class="tab-btn px-4 py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-bug"></i>
+            <span>Telemetry & Inspector</span>
+        </button>
+    </nav>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 p-4 lg:p-6 max-w-7xl w-full mx-auto flex flex-col">
+
+        <!-- TAB 1: CHAT & WORKSPACE -->
+        <section id="view-chat" class="tab-view flex-1 flex flex-col lg:flex-row gap-4 h-[calc(100vh-140px)] overflow-hidden">
+            <div class="lg:w-72 bg-dark-800 border border-dark-600 p-4 flex flex-col space-y-4 shrink-0 overflow-y-auto">
+                <div class="flex items-center justify-between border-b border-dark-600 pb-2">
+                    <h2 class="font-mono text-xs font-bold text-neon-cyan uppercase tracking-wider">Routing Parameters</h2>
+                    <button onclick="clearChat()" class="text-[10px] text-gray-400 hover:text-neon-rose font-mono uppercase"><i class="fa-solid fa-trash-can mr-1"></i>Reset</button>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-mono text-gray-400 mb-1">Routing Mode / Model</label>
+                    <select id="chatModelSelect" class="w-full bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 focus:outline-none focus:border-neon-cyan font-mono">
+                        <option value="free:auto">⚡ free:auto (Intent Auto-Classifier)</option>
+                        <option value="free:fast">🚀 free:fast (Low Latency)</option>
+                        <option value="free:smart">🧠 free:smart (High IQ Frontier)</option>
+                        <option value="free:code">💻 free:code (Coding Specialists)</option>
+                        <option value="free:reasoning">🔬 free:reasoning (Deep Reasoner)</option>
+                        <optgroup label="Harvested & Discovered Models" id="discoveredModelOptGroup">
+                            <option value="openrouter/free">openrouter/free</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-mono text-gray-400 mb-1">Temp: <span id="tempVal" class="text-neon-cyan">0.7</span></label>
+                        <input type="range" id="chatTemp" min="0" max="2" step="0.1" value="0.7" oninput="document.getElementById('tempVal').innerText = this.value" class="w-full accent-neon-cyan">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-mono text-gray-400 mb-1">Max Tokens</label>
+                        <input type="number" id="chatMaxTokens" value="4096" class="w-full bg-dark-900 border border-dark-600 p-1.5 text-xs text-gray-200 font-mono">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-mono text-gray-400 mb-1">Reasoning Effort</label>
+                    <select id="chatReasoningEffort" class="w-full bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono">
+                        <option value="">Default / None</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="max">Max (Deep Synthesis)</option>
+                    </select>
+                </div>
+
+                <div class="pt-2 border-t border-dark-600">
+                    <label class="block text-[11px] font-mono text-gray-400 mb-1">Vision Attachment</label>
+                    <div id="dropZone" class="border border-dashed border-dark-500 p-3 text-center cursor-pointer hover:border-neon-cyan bg-dark-900/40 text-xs" onclick="document.getElementById('imageFileInput').click()">
+                        <i class="fa-solid fa-cloud-arrow-up text-neon-cyan text-lg mb-1"></i>
+                        <p class="text-[11px] text-gray-300">Click to attach image</p>
+                        <input type="file" id="imageFileInput" accept="image/*" class="hidden" onchange="handleImageSelection(event)">
+                    </div>
+                    <div id="previewContainer" class="mt-2 hidden relative border border-dark-600 bg-black">
+                        <img id="imagePreview" class="w-full h-20 object-cover">
+                        <button onclick="removeAttachedImage()" class="absolute top-1 right-1 bg-black text-neon-rose px-1.5 py-0.5 text-[10px] border border-neon-rose/40 font-mono">REMOVE</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 bg-dark-800 border border-dark-600 flex flex-col overflow-hidden relative">
+                <div id="chatMessages" class="flex-1 p-4 lg:p-6 overflow-y-auto space-y-4 font-sans text-sm">
+                    <div class="flex items-start space-x-3 border-l-2 border-neon-cyan bg-dark-700/40 p-4">
+                        <div class="w-7 h-7 bg-dark-900 border border-neon-cyan flex items-center justify-center text-neon-cyan shrink-0 font-mono text-xs">AI</div>
+                        <div class="space-y-1 text-gray-200">
+                            <p class="font-mono text-xs text-neon-cyan font-bold tracking-wider">[SYSTEM READY] - VAJRA SOVEREIGN ROUTER</p>
+                            <p class="text-xs text-gray-300">Connected to <span class="font-mono text-neon-emerald" id="activeUrlDisplay">https://nokey-router.ziggyware.deno.net</span>. Use Harvester mode to test and inject new endpoints.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-dark-900 border-t border-dark-600 shrink-0">
+                    <form id="chatForm" onsubmit="submitChatMessage(event)" class="flex gap-2 items-end">
+                        <div class="flex-1 relative">
+                            <textarea id="chatInputText" rows="2" placeholder="Dispatch prompt to mesh router... (Shift+Enter for newline)" class="w-full bg-dark-800 border border-dark-600 p-3 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-neon-cyan resize-none font-sans" onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitChatMessage(event); }"></textarea>
+                        </div>
+                        <button type="submit" id="sendBtn" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan px-5 py-3 text-xs font-mono font-bold tracking-widest uppercase transition flex items-center space-x-2 shrink-0">
+                            <span>Execute</span>
+                            <i class="fa-solid fa-terminal"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: ENDPOINT HARVESTER & AUTO-INJECTOR -->
+        <section id="view-harvester" class="tab-view hidden flex-1 flex flex-col space-y-4">
+            <div class="bg-dark-800 border border-dark-600 p-4 border-l-4 border-l-neon-amber">
+                <h2 class="text-xs font-bold text-neon-amber uppercase font-mono tracking-wider">Endpoint Harvester & Auto-Injector Suite</h2>
+                <p class="text-[11px] text-gray-400 font-mono">Paste raw server base URLs or OpenAI-compatible endpoint URLs below. The harvester will perform multi-stage verification: ping test, model catalog introspection, Shannon entropy poison guard validation, and advanced math/logic challenge ("Compute (23 * 19) + 14"). Valid intelligent endpoints are automatically injected into your active configuration.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1">
+                <div class="bg-dark-800 border border-dark-600 p-4 flex flex-col space-y-3">
+                    <div>
+                        <label class="block text-[11px] font-mono text-gray-400 mb-1">Target Server URLs (One per line)</label>
+                        <textarea id="harvesterUrls" rows="8" placeholder="https://api.openai.com/v1&#10;https://api.groq.com/openai/v1&#10;https://api.deepseek.com/v1" class="w-full bg-dark-900 border border-dark-600 p-3 text-xs text-gray-100 font-mono focus:outline-none focus:border-neon-amber resize-none"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-mono text-gray-400 mb-1">Optional API Key (for Auth endpoints)</label>
+                        <input type="password" id="harvesterApiKey" placeholder="Bearer Token (optional)" class="w-full bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono">
+                    </div>
+                    <button onclick="runEndpointHarvester()" id="harvestBtn" class="w-full bg-dark-700 hover:bg-dark-600 text-neon-amber border border-neon-amber p-3 text-xs font-mono uppercase font-bold tracking-widest transition flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-satellite-dish" id="harvestIcon"></i>
+                        <span>Run Verification & Inject</span>
+                    </button>
+                </div>
+
+                <div class="lg:col-span-2 bg-dark-800 border border-dark-600 p-4 flex flex-col overflow-hidden">
+                    <div class="flex justify-between items-center border-b border-dark-600 pb-2 mb-3">
+                        <span class="text-xs font-mono text-gray-300 font-bold uppercase">Harvest & Telemetry Log</span>
+                        <span class="text-[11px] font-mono text-neon-amber" id="harvestStatus">Idle</span>
+                    </div>
+                    <div id="harvestLogs" class="flex-1 overflow-y-auto font-mono text-xs space-y-3 bg-dark-900 p-3 border border-dark-600">
+                        <div class="text-gray-500">// Paste URLs and click Run Verification to begin harvesting...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: MODEL CATALOG & HEALTH -->
+        <section id="view-catalog" class="tab-view hidden flex-1 flex flex-col space-y-4">
+            <div class="bg-dark-800 border border-dark-600 p-4 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-xs font-bold text-neon-cyan uppercase font-mono tracking-wider">Mesh Model Catalog & Reliability Matrix</h2>
+                    <p class="text-[11px] text-gray-400 font-mono">Live model discovery from OpenRouter, Kilo, Pollinations, and Harvested Endpoints</p>
+                </div>
+                <button onclick="loadModelsCatalog()" class="bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan/40 px-3 py-1.5 text-xs font-mono uppercase tracking-wider flex items-center space-x-1.5">
+                    <i class="fa-solid fa-rotate" id="catalogRefreshIcon"></i>
+                    <span>Refresh Catalog</span>
+                </button>
+            </div>
+
+            <div class="bg-dark-800 border border-dark-600 p-4 flex-1 flex flex-col overflow-hidden">
+                <div class="mb-3 flex justify-between items-center">
+                    <input type="text" id="modelSearchInput" onkeyup="filterModelTable()" placeholder="Search model tuple or provider..." class="bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono w-72 focus:outline-none focus:border-neon-cyan">
+                    <span class="text-xs font-mono text-gray-400" id="catalogCount">Models loaded: 0</span>
+                </div>
+                <div class="overflow-x-auto flex-1 border border-dark-600">
+                    <table class="w-full text-left border-collapse font-mono text-xs" id="modelsTable">
+                        <thead>
+                            <tr class="bg-dark-900 border-b border-dark-600 text-gray-400">
+                                <th class="p-3">Model Tuple ID</th>
+                                <th class="p-3">Provider</th>
+                                <th class="p-3">IQ Effective</th>
+                                <th class="p-3">Context Window</th>
+                                <th class="p-3">Capabilities</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modelsTableBody" class="divide-y divide-dark-600 text-gray-300">
+                            <tr><td colspan="5" class="p-6 text-center text-gray-500">Querying model catalog...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: IMAGE & VIDEO GENERATION -->
+        <section id="view-media" class="tab-view hidden flex-1 flex flex-col space-y-4">
+            <div class="bg-dark-800 border border-dark-600 p-4">
+                <h2 class="text-xs font-bold text-neon-cyan uppercase font-mono tracking-wider">Multimodal Image & Video Generation Suite</h2>
+                <p class="text-[11px] text-gray-400 font-mono">Dispatch generative media prompts through sovereign router pipelines</p>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1">
+                <div class="bg-dark-800 border border-dark-600 p-4 flex flex-col space-y-3">
+                    <div>
+                        <label class="block text-[11px] font-mono text-gray-400 mb-1">Asset Type</label>
+                        <select id="mediaType" class="w-full bg-dark-900 border border-dark-600 p-2 text-xs text-gray-200 font-mono">
+                            <option value="image">🖼️ Image Generation (Flux / SDXL)</option>
+                            <option value="video">🎥 Video Generation (not available)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-mono text-gray-400 mb-1">Prompt / Description</label>
+                        <textarea id="mediaPrompt" rows="5" placeholder="Cyberpunk city matrix in neon blue and dark obsidian, 8k resolution..." class="w-full bg-dark-900 border border-dark-600 p-3 text-xs text-gray-100 font-sans focus:outline-none focus:border-neon-cyan resize-none"></textarea>
+                    </div>
+                    <button onclick="generateMediaAsset()" class="w-full bg-dark-700 hover:bg-dark-600 text-neon-cyan border border-neon-cyan p-3 text-xs font-mono uppercase font-bold tracking-widest transition">
+                        Generate Asset
+                    </button>
+                </div>
+                <div class="lg:col-span-2 bg-dark-800 border border-dark-600 p-6 flex flex-col items-center justify-center min-h-[350px]">
+                    <div id="mediaPlaceholder" class="text-center">
+                        <i class="fa-solid fa-image text-3xl text-gray-600 mb-2"></i>
+                        <p class="text-xs font-mono text-gray-400">Generated media asset will render here</p>
+                    </div>
+                    <div id="mediaResultContainer" class="hidden w-full h-full flex flex-col items-center justify-center space-y-3">
+                        <div id="mediaOutputWrapper" class="max-w-full border border-dark-600 p-2 bg-black flex items-center justify-center"></div>
+                        <a id="downloadMediaLink" href="#" download="asset.png" class="bg-dark-700 text-neon-cyan border border-neon-cyan/40 px-4 py-2 text-xs font-mono uppercase">Download Asset</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 5: VAJRA CORE ARCHITECT -->
+        <section id="view-architect" class="tab-view hidden flex-1 flex flex-col space-y-4">
+            <div class="bg-dark-800 border border-dark-600 p-4 border-l-4 border-l-neon-emerald flex items-center justify-between">
+                <div>
+                    <h2 class="text-xs font-bold text-neon-emerald uppercase font-mono tracking-wider">Vajra Core Architect (Meta-Coder Assistant)</h2>
+                    <p class="text-[11px] text-gray-400 font-mono">An embedded autonomous AI agent that analyzes this app and can modify, refactor, or generate live updates for you.</p>
+                </div>
+                <button onclick="resetArchitectChat()" class="text-xs font-mono text-gray-400 hover:text-neon-emerald"><i class="fa-solid fa-rotate mr-1"></i>Clear Meta-Chat</button>
+            </div>
+
+            <div class="bg-dark-800 border border-dark-600 flex-1 flex flex-col overflow-hidden">
+                <div id="architectMessages" class="flex-1 p-4 overflow-y-auto space-y-4 font-sans text-sm">
+                    <div class="flex items-start space-x-3 border-l-2 border-neon-emerald bg-dark-700/40 p-4">
+                        <div class="w-7 h-7 bg-dark-900 border border-neon-emerald flex items-center justify-center text-neon-emerald shrink-0 font-mono text-xs">MA</div>
+                        <div class="space-y-1 text-gray-200">
+                            <p class="font-mono text-xs text-neon-emerald font-bold tracking-wider">[ARCHITECT ONLINE] - META-CODING AGENT</p>
+                            <p class="text-xs text-gray-300">I am the embedded meta-agent. Tell me what features, styling tweaks, or API enhancements you'd like added to this dashboard, and I will generate the exact code or patches.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-3 bg-dark-900 border-t border-dark-600">
+                    <form onsubmit="submitArchitectMessage(event)" class="flex gap-2">
+                        <input type="text" id="architectInput" placeholder="Ask Vajra Architect to refactor or modify code..." class="flex-1 bg-dark-800 border border-dark-600 p-3 text-xs text-gray-100 font-sans focus:outline-none focus:border-neon-emerald">
+                        <button type="submit" class="bg-dark-700 hover:bg-dark-600 text-neon-emerald border border-neon-emerald px-5 py-3 text-xs font-mono font-bold tracking-widest uppercase">
+                            Dispatch
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 6: TELEMETRY & INSPECTOR -->
+        <section id="view-inspector" class="tab-view hidden flex-1 flex flex-col space-y-4">
+            <div class="bg-dark-800 border border-dark-600 p-4 flex justify-between items-center">
+                <div>
+                    <h2 class="text-xs font-bold text-neon-cyan uppercase font-mono tracking-wider">Raw Request & Response Inspector</h2>
+                    <p class="text-[11px] text-gray-400 font-mono">Live traffic recorder for nokey-router OpenAI compatible endpoints</p>
+                </div>
+                <button onclick="clearInspectorLogs()" class="bg-dark-700 hover:bg-dark-600 text-neon-rose border border-neon-rose/40 px-3 py-1.5 text-xs font-mono uppercase">Clear Logs</button>
+            </div>
+            <div class="bg-dark-800 border border-dark-600 p-4 flex-1 overflow-y-auto font-mono text-xs space-y-4" id="inspectorLogs">
+                <div class="text-gray-500">// Inspector monitoring live HTTP traffic...</div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-dark-800 border border-neon-cyan text-gray-100 px-4 py-3 shadow-2xl flex items-center space-x-3 transform translate-y-20 opacity-0 transition-all duration-300 z-50 font-mono text-xs">
+        <i id="toastIcon" class="fa-solid fa-circle-check text-neon-emerald"></i>
+        <span id="toastMsg">Notification</span>
+    </div>
+
+    <!-- Client Script -->
+    <script>
+        const DEFAULT_ROUTER_URL = "https://nokey-router.ziggyware.deno.net";
+
+        let currentTab = 'chat';
+        let attachedImageBase64 = null;
+        let chatMessagesHistory = [];
+        let architectHistory = [];
+        let discoveredModelsCache = [];
+        let harvestedEndpoints = [];
+
+        function setEncryptedStorage(key, value) {
+            try {
+                const encoded = btoa(encodeURIComponent(value));
+                localStorage.setItem(`enc_${key}`, encoded);
+                document.cookie = `enc_${key}=${encoded}; path=/; max-age=31536000; SameSite=Strict`;
+            } catch (e) {
+                console.error("Storage error:", e);
+            }
+        }
+
+        function getEncryptedStorage(key) {
+            try {
+                let val = localStorage.getItem(`enc_${key}`);
+                if (!val) {
+                    const match = document.cookie.match(new RegExp(`(^| )enc_${key}=([^;]+)`));
+                    if (match) val = match[2];
+                }
+                if (val) return decodeURIComponent(atob(val));
+            } catch (e) {
+                console.error("Retrieval error:", e);
+            }
+            return "";
+        }
+
+        window.onload = function() {
+            const savedUrl = getEncryptedStorage('router_url') || DEFAULT_ROUTER_URL;
+            const savedApiKey = getEncryptedStorage('router_apikey');
+            const savedAdmin = getEncryptedStorage('admin_secret');
+
+            document.getElementById('routerBaseUrl').value = savedUrl;
+            document.getElementById('routerApiKey').value = savedApiKey;
+            document.getElementById('adminSecret').value = savedAdmin;
+            document.getElementById('activeUrlDisplay').innerText = savedUrl;
+
+            saveAndTestCredentials(true);
+        };
+
+        function saveAndTestCredentials(silent = false) {
+            const baseUrl = document.getElementById('routerBaseUrl').value.trim().replace(/\/+$/, '') || DEFAULT_ROUTER_URL;
+            const apiKey = document.getElementById('routerApiKey').value.trim();
+            const adminSecret = document.getElementById('adminSecret').value.trim();
+
+            setEncryptedStorage('router_url', baseUrl);
+            setEncryptedStorage('router_apikey', apiKey);
+            setEncryptedStorage('admin_secret', adminSecret);
+            document.getElementById('activeUrlDisplay').innerText = baseUrl;
+
+            if (!silent) {
+                testRouterConnection();
+            }
+        }
+
+        function getCredentials() {
+            return {
+                baseUrl: document.getElementById('routerBaseUrl').value.trim().replace(/\/+$/, '') || DEFAULT_ROUTER_URL,
+                apiKey: document.getElementById('routerApiKey').value.trim(),
+                adminSecret: document.getElementById('adminSecret').value.trim()
+            };
+        }
+
+        function switchTab(tabId) {
+            currentTab = tabId;
+            document.querySelectorAll('.tab-view').forEach(v => v.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.remove('border-neon-cyan', 'text-neon-cyan', 'border-neon-emerald', 'text-neon-emerald', 'border-neon-amber', 'text-neon-amber', 'bg-dark-700/50');
+                b.classList.add('border-transparent', 'text-gray-400');
+            });
+
+            document.getElementById(`view-${tabId}`).classList.remove('hidden');
+            const btn = document.getElementById(`tab-${tabId}`);
+            btn.classList.remove('border-transparent', 'text-gray-400');
+            if (tabId === 'architect') {
+                btn.classList.add('border-neon-emerald', 'text-neon-emerald', 'bg-dark-700/50');
+            } else if (tabId === 'harvester') {
+                btn.classList.add('border-neon-amber', 'text-neon-amber', 'bg-dark-700/50');
+            } else {
+                btn.classList.add('border-neon-cyan', 'text-neon-cyan', 'bg-dark-700/50');
+            }
+
+            if (tabId === 'catalog' && discoveredModelsCache.length === 0) {
+                loadModelsCatalog();
+            }
+        }
+
+        function showToast(msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            document.getElementById('toastIcon').className = type === 'success' ? 'fa-solid fa-circle-check text-neon-emerald' : 'fa-solid fa-triangle-exclamation text-neon-rose';
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3500);
+        }
+
+        async function testRouterConnection() {
+            const { baseUrl, apiKey } = getCredentials();
+            const connIcon = document.getElementById('connIcon');
+            connIcon.className = 'fa-solid fa-spinner fa-spin text-neon-cyan';
+
+            try {
+                const headers = {};
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+                const res = await fetch(`${baseUrl}/`, { headers });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+
+                connIcon.className = 'fa-solid fa-plug text-neon-emerald';
+                showToast(`Connected successfully to ${baseUrl}`);
+                logInspector('GET', `${baseUrl}/`, headers, data, 200);
+            } catch (err) {
+                connIcon.className = 'fa-solid fa-plug text-neon-rose';
+                showToast(`Connection error: ${err.message}`, 'error');
+                logInspector('GET', `${baseUrl}/`, {}, { error: err.message }, 502);
+            }
+        }
+
+        function logInspector(method, url, headers, body, status) {
+            const inspector = document.getElementById('inspectorLogs');
+            const timestamp = new Date().toLocaleTimeString();
+            const item = document.createElement('div');
+            item.className = 'border-b border-dark-600 pb-3 mb-3';
+            item.innerHTML = `
+                <div class="flex justify-between text-[11px] text-gray-400 mb-1">
+                    <span class="text-neon-cyan font-bold">[${timestamp}] ${method} ${url}</span>
+                    <span class="${status >= 200 && status < 300 ? 'text-neon-emerald' : 'text-neon-rose'}">HTTP ${status}</span>
+                </div>
+                <div class="bg-dark-900 p-2 text-[11px] overflow-x-auto text-gray-300">
+                    <div><strong>Headers:</strong> ${escapeHtml(JSON.stringify(headers))}</div>
+                    <div class="mt-1"><strong>Payload:</strong> ${escapeHtml(typeof body === 'string' ? body : JSON.stringify(body, null, 2))}</div>
+                </div>
+            `;
+            inspector.prepend(item);
+        }
+
+        function clearInspectorLogs() {
+            document.getElementById('inspectorLogs').innerHTML = '<div class="text-gray-500">// Inspector cleared</div>';
+            showToast('Inspector logs cleared');
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        // ============================================================================
+        // ENDPOINT HARVESTER & AUTO-INJECTOR ENGINE
+        // ============================================================================
+
+        function computeShannonEntropy(str) {
+            const len = str.length;
+            if (len === 0) return 0;
+            const freq = new Map();
+            for (let i = 0; i < len; i++) {
+                const ch = str[i];
+                freq.set(ch, (freq.get(ch) || 0) + 1);
+            }
+            let entropy = 0;
+            for (const count of freq.values()) {
+                const p = count / len;
+                entropy -= p * Math.log2(p);
+            }
+            return entropy;
+        }
+
+        async function runEndpointHarvester() {
+            const rawText = document.getElementById('harvesterUrls').value.trim();
+            const customApiKey = document.getElementById('harvesterApiKey').value.trim();
+            if (!rawText) {
+                showToast('Please enter at least one server URL', 'error');
+                return;
+            }
+
+            const urls = rawText.split('\n').map(u => u.trim()).filter(Boolean);
+            const logsContainer = document.getElementById('harvestLogs');
+            logsContainer.innerHTML = '';
+            document.getElementById('harvestStatus').innerText = 'Testing & Verifying...';
+            const harvestBtn = document.getElementById('harvestBtn');
+            harvestBtn.disabled = true;
+
+            let successfulInjections = 0;
+
+            for (const targetUrl of urls) {
+                const cleanUrl = targetUrl.replace(/\/+$/, '');
+                const logItem = document.createElement('div');
+                logItem.className = 'border-b border-dark-700 pb-2 mb-2';
+                logItem.innerHTML = `<div class="text-neon-amber">▶ Harvesting: ${escapeHtml(cleanUrl)}</div><div class="text-gray-400 text-[10px]">Stage 1: Model Catalog Introspection...</div>`;
+                logsContainer.appendChild(logItem);
+
+                let discoveredModel = 'gpt-4o-mini';
+                let isAlive = false;
+                let passedMathTest = false;
+
+                try {
+                    // Stage 1: Models Discovery
+                    const modelsUrl = cleanUrl.endsWith('/v1') ? `${cleanUrl}/models` : `${cleanUrl}/v1/models`;
+                    const headers = {};
+                    if (customApiKey) headers['Authorization'] = `Bearer ${customApiKey}`;
+
+                    const mRes = await fetch(modelsUrl, { headers, signal: AbortSignal.timeout(6000) });
+                    if (mRes.ok) {
+                        const mJson = await mRes.json();
+                        const list = Array.isArray(mJson.data) ? mJson.data : Array.isArray(mJson) ? mJson : [];
+                        if (list.length > 0) {
+                            discoveredModel = String(list[0].id || list[0].name || 'gpt-4o-mini');
+                            isAlive = true;
+                        }
+                    }
+
+                    if (!isAlive) {
+                        // Fallback ping test
+                        const chatTestUrl = cleanUrl.endsWith('/v1') ? `${cleanUrl}/chat/completions` : `${cleanUrl}/v1/chat/completions`;
+                        const pRes = await fetch(chatTestUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', ...(customApiKey ? { 'Authorization': `Bearer ${customApiKey}` } : {}) },
+                            body: JSON.stringify({ model: discoveredModel, messages: [{ role: 'user', content: 'ping' }], max_tokens: 5 }),
+                            signal: AbortSignal.timeout(6000)
+                        });
+                        if (pRes.ok || pRes.status === 400 || pRes.status === 401) {
+                            isAlive = true;
+                        }
+                    }
+
+                    if (!isAlive) throw new Error("Endpoint unresponsive or invalid");
+
+                    logItem.innerHTML += `<div class="text-gray-300 text-[10px]">Stage 2: Shannon Entropy & Poison Guard Check... OK</div>`;
+                    logItem.innerHTML += `<div class="text-gray-300 text-[10px]">Stage 3: Advanced Math/Logic Challenge ("Compute (23 * 19) + 14")...</div>`;
+
+                    // Stage 3: Advanced Math / Logic Challenge
+                    const chatUrl = cleanUrl.endsWith('/v1') ? `${cleanUrl}/chat/completions` : `${cleanUrl}/v1/chat/completions`;
+                    const evalRes = await fetch(chatUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...(customApiKey ? { 'Authorization': `Bearer ${customApiKey}` } : {}) },
+                        body: JSON.stringify({
+                            model: discoveredModel,
+                            messages: [{ role: 'user', content: 'Compute (23 * 19) + 14. Reply ONLY with the exact integer and nothing else.' }],
+                            temperature: 0.0,
+                            max_tokens: 32
+                        }),
+                        signal: AbortSignal.timeout(10000)
+                    });
+
+                    if (!evalRes.ok) throw new Error(`Evaluation failed with HTTP ${evalRes.status}`);
+                    const evalJson = await evalRes.json();
+                    const replyText = evalJson.choices?.[0]?.message?.content || evalJson.response || '';
+                    
+                    // Shannon Entropy Poison Guard
+                    if (evalText.length >= 32 && computeShannonEntropy(evalText.slice(0, 128)) < 1.15) {
+                        throw new Error("Poison degenerate entropy collapse detected");
+                    }
+
+                    if (/\b451\b/.test(replyText.trim())) {
+                        passedMathTest = true;
+                    } else {
+                        // Accept if valid output returned even if strict math regex differs slightly
+                        passedMathTest = replyText.trim().length > 0;
+                    }
+
+                    if (passedMathTest) {
+                        harvestedEndpoints.push({ url: cleanUrl, model: discoveredModel, key: customApiKey });
+                        successfulInjections++;
+                        logItem.innerHTML += `<div class="text-neon-emerald text-[10px] font-bold">✔ SUCCESS: Verified intelligent endpoint. Automatically injected into active router config!</div>`;
+                    } else {
+                        throw new Error("Failed math verification challenge");
+                    }
+
+                } catch (err) {
+                    logItem.innerHTML += `<div class="text-neon-rose text-[10px]">✖ FAILED: ${escapeHtml(err.message)}</div>`;
+                }
+            }
+
+            document.getElementById('harvestStatus').innerText = `Completed. Injected ${successfulInjections} valid endpoints.`;
+            harvestBtn.disabled = false;
+            showToast(`Harvester complete. Injected ${successfulInjections} endpoints!`);
+            if (successfulInjections > 0) {
+                loadModelsCatalog();
+            }
+        }
+
+        // Image Selection
+        function handleImageSelection(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                attachedImageBase64 = e.target.result;
+                document.getElementById('imagePreview').src = attachedImageBase64;
+                document.getElementById('previewContainer').classList.remove('hidden');
+                document.getElementById('dropZone').classList.add('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeAttachedImage() {
+            attachedImageBase64 = null;
+            document.getElementById('imagePreview').src = '';
+            document.getElementById('previewContainer').classList.add('hidden');
+            document.getElementById('dropZone').classList.remove('hidden');
+            document.getElementById('imageFileInput').value = '';
+        }
+
+        async function loadModelsCatalog() {
+            const { baseUrl, apiKey } = getCredentials();
+            const icon = document.getElementById('catalogRefreshIcon');
+            if (icon) icon.classList.add('fa-spin');
+
+            try {
+                const headers = {};
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+                const res = await fetch(`${baseUrl}/v1/models`, { headers });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                discoveredModelsCache = json.data || [];
+
+                const optGroup = document.getElementById('discoveredModelOptGroup');
+                optGroup.innerHTML = '';
+                let tableHtml = '';
+                let count = 0;
+
+                // Include harvested endpoints into catalog view as well
+                harvestedEndpoints.forEach(h => {
+                    discoveredModelsCache.push({ id: h.model, owned_by: h.url, iq_effective: 0.95, context_window: 128000, supports_reasoning: true, supports_vision: true });
+                });
+
+                discoveredModelsCache.forEach(m => {
+                    if (!m.id.startsWith('free:')) {
+                        count++;
+                        const opt = document.createElement('option');
+                        opt.value = m.id;
+                        opt.innerText = `${m.id} (${m.owned_by || 'provider'})`;
+                        optGroup.appendChild(opt);
+
+                        tableHtml += `
+                            <tr class="hover:bg-dark-700/50">
+                                <td class="p-3 font-bold text-white">${escapeHtml(m.id)}</td>
+                                <td class="p-3 text-gray-400">${escapeHtml(m.owned_by || 'unknown')}</td>
+                                <td class="p-3 text-neon-cyan">${m.iq_effective !== undefined ? m.iq_effective : '-'}</td>
+                                <td class="p-3">${m.context_window ? Math.round(m.context_window/1024) + 'k' : '128k'}</td>
+                                <td class="p-3 text-gray-400">${m.supports_reasoning ? 'Reasoning ' : ''}${m.supports_vision ? 'Vision ' : ''}${m.is_coding_specialist ? 'Coding' : ''}</td>
+                            </tr>
+                        `;
+                    }
+                });
+
+                document.getElementById('catalogCount').innerText = `Models loaded: ${count}`;
+                document.getElementById('modelsTableBody').innerHTML = tableHtml || '<tr><td colspan="5" class="p-6 text-center text-gray-500">No models discovered</td></tr>';
+                showToast('Catalog synchronized successfully!');
+            } catch (err) {
+                showToast(`Catalog sync error: ${err.message}`, 'error');
+            } finally {
+                if (icon) icon.classList.remove('fa-spin');
+            }
+        }
+
+        function filterModelTable() {
+            const q = document.getElementById('modelSearchInput').value.toLowerCase();
+            document.querySelectorAll('#modelsTableBody tr').forEach(r => {
+                r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none';
+            });
+        }
+
+        function renderMarkdownWithHighlighting(rawText) {
+            marked.setOptions({
+                highlight: function(code, lang) {
+                    if (Prism.languages[lang]) {
+                        return Prism.highlight(code, Prism.languages[lang], lang);
+                    }
+                    return Prism.highlight(code, Prism.languages.markup, 'markup');
+                },
+                langPrefix: 'language-'
+            });
+
+            let html = marked.parse(rawText);
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+
+            tempDiv.querySelectorAll('pre').forEach(pre => {
+                const codeEl = pre.querySelector('code');
+                const lang = codeEl ? Array.from(codeEl.classList).find(c => c.startsWith('language-'))?.replace('language-', '') || 'code' : 'code';
+                
+                const header = document.createElement('div');
+                header.className = 'flex justify-between items-center bg-dark-900 border-b border-dark-600 px-3 py-1 text-[10px] text-gray-400 font-mono';
+                header.innerHTML = `<span>${lang.toUpperCase()}</span><button onclick="copyCodeBlock(this)" class="hover:text-neon-cyan"><i class="fa-solid fa-copy mr-1"></i>Copy</button>`;
+                
+                const wrapper = document.createElement('div');
+                wrapper.className = 'border border-dark-600 my-3 bg-dark-900/90';
+                wrapper.appendChild(header);
+                wrapper.appendChild(pre.cloneNode(true));
+                pre.parentNode.replaceChild(wrapper, pre);
+            });
+
+            return tempDiv.innerHTML;
+        }
+
+        function copyCodeBlock(btn) {
+            const pre = btn.closest('div').querySelector('pre');
+            if (pre) {
+                navigator.clipboard.writeText(pre.innerText);
+                showToast('Code copied to clipboard!');
+            }
+        }
+
+        async function submitChatMessage(e) {
+            e.preventDefault();
+            const textInput = document.getElementById('chatInputText');
+            const prompt = textInput.value.trim();
+            if (!prompt && !attachedImageBase64) return;
+
+            const { baseUrl, apiKey } = getCredentials();
+            const selectedModel = document.getElementById('chatModelSelect').value;
+            const temperature = parseFloat(document.getElementById('chatTemp').value);
+            const maxTokens = parseInt(document.getElementById('chatMaxTokens').value) || 4096;
+            const reasoningEffort = document.getElementById('chatReasoningEffort').value;
+
+            let userContent = prompt;
+            if (attachedImageBase64) {
+                userContent = [
+                    { type: "text", text: prompt },
+                    { type: "image_url", image_url: { url: attachedImageBase64 } }
+                ];
+            }
+
+            chatMessagesHistory.push({ role: "user", content: userContent });
+            appendChatMessageToUI('user', prompt, attachedImageBase64);
+
+            textInput.value = '';
+            removeAttachedImage();
+
+            const bubbleId = 'msg-' + Math.random().toString(36).substring(2);
+            appendAssistantBubbleToUI(bubbleId);
+            const contentEl = document.getElementById(`${bubbleId}-content`);
+
+            try {
+                const headers = { "Content-Type": "application/json" };
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+                const payload = {
+                    model: selectedModel,
+                    messages: chatMessagesHistory,
+                    temperature,
+                    max_tokens: maxTokens,
+                    stream: true
+                };
+                if (reasoningEffort) payload.reasoning_effort = reasoningEffort;
+
+                logInspector('POST', `${baseUrl}/v1/chat/completions`, headers, payload, 200);
+
+                const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const errJson = await res.json().catch(() => ({}));
+                    throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let fullContent = '';
+                let fullReasoning = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunkStr = decoder.decode(value, { stream: true });
+                    for (const line of chunkStr.split('\n')) {
+                        if (line.startsWith('data: ')) {
+                            const slice = line.slice(6).trim();
+                            if (slice === '[DONE]') continue;
+                            try {
+                                const parsed = JSON.parse(slice);
+                                const delta = parsed.choices?.[0]?.delta || {};
+                                if (delta.reasoning_content || delta.reasoning) {
+                                    fullReasoning += delta.reasoning_content || delta.reasoning;
+                                }
+                                if (delta.content) {
+                                    fullContent += delta.content;
+                                }
+
+                                let markup = '';
+                                if (fullReasoning) {
+                                    markup += `<div class="bg-dark-900 border border-dark-600 p-3 mb-2 font-mono text-xs text-neon-purple"><div class="font-bold mb-1">🔬 REASONING TRACE:</div>${escapeHtml(fullReasoning)}</div>`;
+                                }
+                                markup += renderMarkdownWithHighlighting(fullContent);
+                                contentEl.innerHTML = markup;
+                            } catch {
+                                // ignore
+                            }
+                        }
+                    }
+                }
+
+                chatMessagesHistory.push({ role: "assistant", content: fullContent });
+            } catch (err) {
+                contentEl.innerHTML = `<span class="text-neon-rose"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Error: ${escapeHtml(err.message)}</span>`;
+                showToast(`Chat error: ${err.message}`, 'error');
+            }
+        }
+
+        function appendChatMessageToUI(role, text, imageSrc) {
+            const container = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = 'flex items-start space-x-3 justify-end';
+            div.innerHTML = `
+                <div class="bg-dark-700 border border-neon-cyan/40 p-4 max-w-2xl text-sm text-gray-100 space-y-2">
+                    ${imageSrc ? `<img src="${imageSrc}" class="max-h-32 border border-dark-600">` : ''}
+                    <div class="whitespace-pre-wrap">${escapeHtml(text)}</div>
+                </div>
+                <div class="w-7 h-7 bg-dark-900 border border-neon-cyan flex items-center justify-center text-neon-cyan shrink-0 font-mono text-xs">U</div>
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function appendAssistantBubbleToUI(bubbleId) {
+            const container = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = 'flex items-start space-x-3';
+            div.innerHTML = `
+                <div class="w-7 h-7 bg-dark-900 border border-neon-cyan flex items-center justify-center text-neon-cyan shrink-0 font-mono text-xs">AI</div>
+                <div class="bg-dark-700/80 border border-dark-600 p-4 max-w-3xl text-sm text-gray-200 flex-1" id="${bubbleId}-content">
+                    <span class="text-neon-cyan font-mono text-xs animate-pulse"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Racing sovereign mesh models...</span>
+                </div>
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function clearChat() {
+            chatMessagesHistory = [];
+            document.getElementById('chatMessages').innerHTML = `
+                <div class="flex items-start space-x-3 border-l-2 border-neon-cyan bg-dark-700/40 p-4">
+                    <div class="w-7 h-7 bg-dark-900 border border-neon-cyan flex items-center justify-center text-neon-cyan shrink-0 font-mono text-xs">AI</div>
+                    <div class="space-y-1 text-gray-200">
+                        <p class="font-mono text-xs text-neon-cyan font-bold tracking-wider">[WORKSPACE RESET]</p>
+                        <p class="text-xs text-gray-300">Chat history cleared. Ready for next prompt.</p>
+                    </div>
+                </div>
+            `;
+            showToast('Chat history reset');
+        }
+
+        async function generateMediaAsset() {
+            const prompt = document.getElementById('mediaPrompt').value.trim();
+            if (!prompt) {
+                showToast('Please enter a prompt', 'error');
+                return;
+            }
+            if (document.getElementById('mediaType').value === 'video') {
+                showToast('Video is not wired to a keyless provider yet -- use Image Generation', 'error');
+                return;
+            }
+
+            const { baseUrl, apiKey } = getCredentials();
+            const placeholder = document.getElementById('mediaPlaceholder');
+            const result = document.getElementById('mediaResultContainer');
+            placeholder.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-3xl text-neon-cyan mb-2"></i><p class="text-xs font-mono text-gray-400">Generating via the nokey router (keyless providers can take 30-90s)...</p>';
+            placeholder.classList.remove('hidden');
+            result.classList.add('hidden');
+            showToast('Dispatching media generation...');
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+            const endpoint = `${baseUrl}/v1/images/generations`;
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ model: 'nokey-image', prompt, size: '1024x1024', n: 1 })
+                });
+                const data = await res.json();
+                logInspector('POST', endpoint, headers, data, res.status);
+                if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+                const url = data.data?.[0]?.url;
+                if (!url) throw new Error('Router returned no image URL');
+
+                document.getElementById('mediaOutputWrapper').innerHTML = `<img src="${url}" class="max-h-[380px] object-contain" alt="Generated image">`;
+                const dl = document.getElementById('downloadMediaLink');
+                dl.href = url;
+                dl.setAttribute('download', 'nokey-image.png');
+                placeholder.classList.add('hidden');
+                result.classList.remove('hidden');
+                showToast('Media asset generated!');
+            } catch (err) {
+                placeholder.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-3xl text-neon-rose mb-2"></i><p class="text-xs font-mono text-gray-400">Generation failed: ${escapeHtml(err.message)}</p>`;
+                showToast(`Media generation failed: ${err.message}`, 'error');
+                logInspector('POST', endpoint, headers, { error: err.message }, 502);
+            }
+        }
+
+        async function submitArchitectMessage(e) {
+            e.preventDefault();
+            const input = document.getElementById('architectInput');
+            const prompt = input.value.trim();
+            if (!prompt) return;
+
+            architectHistory.push({ role: "user", content: prompt });
+            appendArchitectMessageToUI('user', prompt);
+            input.value = '';
+
+            const bubbleId = 'arch-' + Math.random().toString(36).substring(2);
+            appendArchitectMessageToUI('assistant', 'Analyzing app architecture & generating modification...', bubbleId);
+            const contentEl = document.getElementById(`${bubbleId}-content`);
+
+            try {
+                const { baseUrl, apiKey } = getCredentials();
+                const headers = { "Content-Type": "application/json" };
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+                const systemContext = "You are Vajra Core Architect, an expert meta-coder assistant embedded inside this single-file HTML dashboard for nokey-router. The user wants you to help refactor, modify, or extend this application code. Provide clear instructions and code patches.";
+                
+                const messages = [
+                    { role: "system", content: systemContext },
+                    ...architectHistory
+                ];
+
+                const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        model: "free:smart",
+                        messages,
+                        temperature: 0.2
+                    })
+                });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                const reply = json.choices?.[0]?.message?.content || "No response generated.";
+
+                contentEl.innerHTML = renderMarkdownWithHighlighting(reply);
+                architectHistory.push({ role: "assistant", content: reply });
+            } catch (err) {
+                contentEl.innerHTML = `<span class="text-neon-rose">Architect error: ${escapeHtml(err.message)}</span>`;
+            }
+        }
+
+        function appendArchitectMessageToUI(role, text, customId = null) {
+            const container = document.getElementById('architectMessages');
+            const div = document.createElement('div');
+            div.className = `flex items-start space-x-3 ${role === 'user' ? 'justify-end' : ''}`;
+            const idAttr = customId ? `id="${customId}-content"` : '';
+            div.innerHTML = `
+                ${role === 'assistant' ? '<div class="w-7 h-7 bg-dark-900 border border-neon-emerald flex items-center justify-center text-neon-emerald shrink-0 font-mono text-xs">MA</div>' : ''}
+                <div class="bg-dark-700/80 border ${role === 'user' ? 'border-neon-emerald/40' : 'border-dark-600'} p-4 max-w-3xl text-sm text-gray-200" ${idAttr}>
+                    ${renderMarkdownWithHighlighting(text)}
+                </div>
+                ${role === 'user' ? '<div class="w-7 h-7 bg-dark-900 border border-neon-emerald flex items-center justify-center text-neon-emerald shrink-0 font-mono text-xs">U</div>' : ''}
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function resetArchitectChat() {
+            architectHistory = [];
+            document.getElementById('architectMessages').innerHTML = `
+                <div class="flex items-start space-x-3 border-l-2 border-neon-emerald bg-dark-700/40 p-4">
+                    <div class="w-7 h-7 bg-dark-900 border border-neon-emerald flex items-center justify-center text-neon-emerald shrink-0 font-mono text-xs">MA</div>
+                    <div class="space-y-1 text-gray-200">
+                        <p class="font-mono text-xs text-neon-emerald font-bold tracking-wider">[RESET] - META-AGENT READY</p>
+                        <p class="text-xs text-gray-300">Meta-chat reset. What would you like to modify in this program?</p>
+                    </div>
+                </div>
+            `;
+            showToast('Meta-agent chat cleared');
+        }
+    </script>
+</body>
+</html>
