@@ -80,3 +80,20 @@ JSON gateway status to GET /health. Every consumer still parsing / as JSON
 - Connector helper (router.py status): falls back to /health when / does
   not return JSON, instead of crashing with a decode traceback.
 - main.ts: unchanged by this addendum (the /health route already exists).
+
+## Addendum 2 — 2026-10-27 (unverified tuples no longer top the IQ lanes)
+After the redeploy, free:fast and image generation worked on production,
+but free:smart / free:code / free:reasoning still 502ed: their rankings are
+IQ-sorted, and newly discovered tuples entered the catalog with
+iq_verified = 1.0 (full trust) plus an optimistic 900 ms latency prior.
+Registry gateways advertising frontier names ("claude-opus-5",
+"gemini-4-argon") therefore monopolized the IQ lanes despite never having
+served a completion, and every wave burned on them.
+- Fresh tuples now start unverified: iq_verified 0.55 (the canary's fail
+  value) and a neutral 2500 ms latency prior.
+- Sync clamps iq_verified to 0.55 for any tuple that has never succeeded,
+  so existing catalogs self-heal without a KV wipe.
+- Each real dispatch success raises iq_verified by 0.15 (cap 1.0); the
+  canary still sets 1.0 / 0.55 outright on probe results.
+Verified locally: after a sync, Kilo natives head the smart/code rankings
+and both lanes complete in seconds (previously 502).

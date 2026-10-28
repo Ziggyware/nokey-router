@@ -1132,6 +1132,9 @@ async function runSyncProviderTask(task: SyncProviderTask): Promise<void> {
         const updated: MeshModelRecord = {
           ...existing.value,
           iq_prior: profile.iqPrior,
+          iq_verified: existing.value.success_count > 0
+            ? existing.value.iq_verified
+            : Math.min(existing.value.iq_verified, 0.55),
           supports_reasoning: profile.supportsReasoning,
           supports_vision: profile.supportsVision,
           is_coding_specialist: profile.isCodingSpecialist,
@@ -1145,12 +1148,12 @@ async function runSyncProviderTask(task: SyncProviderTask): Promise<void> {
           provider_id: provider.id,
           model_id: item.id,
           iq_prior: profile.iqPrior,
-          iq_verified: 1.0,
+          iq_verified: 0.55,
           supports_reasoning: profile.supportsReasoning,
           supports_vision: profile.supportsVision,
           is_coding_specialist: profile.isCodingSpecialist,
           context_window: ctxWindow,
-          ewma_ttft_ms: 900.0,
+          ewma_ttft_ms: 2500.0,
           ewma_tps: 42.0,
           alpha_success: 2.0,
           beta_failure: 1.0,
@@ -1388,6 +1391,7 @@ async function recordTupleSuccess(
     ewma_tps: 0.3 * observedTps + 0.7 * r.ewma_tps,
     alpha_success: Math.min(50, (r.alpha_success || 2.0) * 0.95 + 1.0),
     beta_failure: Math.max(1.0, (r.beta_failure || 1.0) * 0.95),
+    iq_verified: Math.min(1.0, (r.iq_verified || 0.55) + 0.15),
     success_count: r.success_count + 1,
     failure_streak: 0,
     cooldown_until: 0,
